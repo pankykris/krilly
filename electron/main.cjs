@@ -1269,8 +1269,7 @@ ipcMain.handle("tools:execute", async (_event, toolCall) => {
               { type: "input_text", text: `Locate the visible UI target named "${target}" in this desktop screenshot. Return ONLY compact JSON with keys found, x, y, confidence, description. x and y must be integer pixel coordinates in the ORIGINAL screenshot whose size is ${screenWidth}x${screenHeight}, measured from its top-left. Use the centre of the clickable target. If uncertain or absent, set found false and x/y null. Never guess.` },
               { type: "input_image", image_url: imageUrl, detail: "high" }
             ]
-          }],
-          text: { format: { type: "json_object" } }
+          }]
         })
       });
       if (!locateResponse.ok) {
