@@ -1700,7 +1700,11 @@ ipcMain.handle("local:command", async (_event, rawText) => {
   const text = String(rawText || "").trim();
   if (!text) return { ok: false, local: true, error: "Type a local command." };
 
-  let call = null;\n  if (/^(?:inspect|diagnose|scan)\\s+(?:the\\s+)?(?:peazi\\s+)?(?:form|fields|dom)$/i.test(text)) call = { name: "local_dom_inspect", arguments: {} };\n  const fieldMatch = text.match(/(?:put|enter|type|set)\s+(.+?)\s+(?:in|into|under)\s+(?:the\s+)?(.+?)(?:\s+field)?[.!]?$/i);
+  let call = null;
+  if (/^(?:inspect|diagnose|scan)\s+(?:the\s+)?(?:peazi\s+)?(?:form|fields|dom)$/i.test(text)) {
+    call = { name: "local_dom_inspect", arguments: {} };
+  }
+  const fieldMatch = text.match(/(?:put|enter|type|set)\s+(.+?)\s+(?:in|into|under)\s+(?:the\s+)?(.+?)(?:\s+field)?[.!]?$/i);
   if (fieldMatch) {
     call = { name: "computer_set_field", arguments: { value: fieldMatch[1].trim(), field: fieldMatch[2].trim().replace(/\s+field$/i, "") } };
   }
