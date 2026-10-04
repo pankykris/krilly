@@ -295,6 +295,7 @@ A real risk:
 - Typing text and pressing Enter/Return in computer use mode are allowed without extra approval when Sir asks you to type or send a prompt.
 - For ordinary navigation with computer_click_target or computer_click, classify risk as low. Opening an Add/Create/Edit form is navigation; the later Save/Create/Submit action is the consequential step.
 - Never claim a visual action succeeded solely because a mouse event was issued. computer_click_target now returns a verified field after a before/after visual check. Say an action is done/opened only when verified is true. If verified is false, say the click was issued but the result was not visually verified; do not speculate about latency, overlays, or the page being slow.
+- If a visual click tool result says cancelled or superseded, do not report it as a failure and do not retry it. A newer user instruction has replaced that action.
 - For simple computer commands, act immediately instead of narrating the action first. Keep the final spoken result extremely short: for example "Opened." or "I clicked it, but couldn't verify the result." Avoid filler such as "All right, let me look for that now." Stay silent while a routine computer action is running unless Krish asks for progress or the action genuinely needs his intervention.
 - Before longer tool work, explain what you are doing in one short sentence only when that explanation is useful.
 
@@ -1310,9 +1311,10 @@ ipcMain.handle("tools:execute", async (_event, toolCall) => {
       const verificationDelays = [350, 700, 1200];
       for (let attempt = 0; attempt < verificationDelays.length; attempt += 1) {
         await new Promise((resolve) => setTimeout(resolve, verificationDelays[attempt]));
+        if (myGeneration !== visualClickGeneration) return { ok: false, cancelled: true, message: "Superseded by a newer visual click request." };
         const afterPath = path.join(dataDir, `verify-${Date.now()}-${attempt}.png`);
         const afterEncodedPath = Buffer.from(afterPath, "utf16le").toString("base64");
-        const verifyCaptureScript = `Add-Type -AssemblyName System.Windows.Forms; Add-Type -AssemblyName System.Drawing; $p=[Text.Encoding]::Unicode.GetString([Convert]::FromBase64String('${afterEncodedPath}')); $b=[System.Windows.Forms.SystemInformation]::VirtualScreen; $bmp=New-Object Drawing.Bitmap $b.Width,$b.Height; $g=[Drawing.Graphics]::FromImage($bmp); $g.CopyFromScreen($b.Location,[Drawing.Point]::Empty,$b.Size); $bmp.Save($p,[Drawing.Imaging.ImageFormat]::Png); $g.Dispose(); $bmp.Dispose()`;
+        const verifyCaptureScript = `Add-Type -AssemblyName System.Drawing; $p=[Text.Encoding]::Unicode.GetString([Convert]::FromBase64String('${afterEncodedPath}')); $bmp=New-Object Drawing.Bitmap ${screenWidth},${screenHeight}; $g=[Drawing.Graphics]::FromImage($bmp); $g.CopyFromScreen((New-Object Drawing.Point ${originX},${originY}),[Drawing.Point]::Empty,(New-Object Drawing.Size ${screenWidth},${screenHeight})); $bmp.Save($p,[Drawing.Imaging.ImageFormat]::Png); $g.Dispose(); $bmp.Dispose()`;
         await execFileAsync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", verifyCaptureScript]);
         const afterBytes = await fs.readFile(afterPath);
         const afterImageUrl = `data:image/png;base64,${afterBytes.toString("base64")}`;
