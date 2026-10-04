@@ -67,12 +67,12 @@ export default function App() {
     clientRef.current?.disconnect();
     clientRef.current = null;
     connectingRef.current = false;
-    setStatus("Standby. Press Ctrl + Space to wake Krilly.");
+    setStatus("Standby. Press Press Space to wake Krilly.");
   }
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.ctrlKey && event.code === "Space") {
+      const target = event.target as HTMLElement | null;\n      const isTyping = target?.tagName === "INPUT" || target?.tagName === "TEXTAREA" || target?.isContentEditable;\n      if (event.code === "Space" && !event.ctrlKey && !event.altKey && !event.metaKey && !isTyping) {
         event.preventDefault();
         if (!clientRef.current && !connectingRef.current) void connect();
       }
@@ -130,7 +130,7 @@ export default function App() {
         <header className="krilly-topbar"><div className="brand-mark">KRILLY</div><div className={`presence-dot ${isConnected ? "online" : ""}`}><span />{isConnected ? "LIVE" : "STANDBY"}</div></header>
         <section className="face-stage">
           <div className="core-wrap"><div className="core-halo" /><KrillyFace mood={mood} mouthShape={mouthShape} /></div>
-          <div className="krilly-state"><Sparkles size={14}/><strong>{isConnected ? (mood === "speaking" ? "Speaking" : mood === "thinking" ? "Thinking" : "Listening") : "Ready when you are"}</strong><span>{isConnected ? "Hands-free session active" : "Ctrl + Space to wake Krilly"}</span></div>
+          <div className="krilly-state"><Sparkles size={14}/><strong>{isConnected ? (mood === "speaking" ? "Speaking" : mood === "thinking" ? "Thinking" : "Listening") : "Ready when you are"}</strong><span>{isConnected ? "Hands-free session active" : "Press Space to wake Krilly"}</span></div>
         </section>
 
         <section className="glance-row">
