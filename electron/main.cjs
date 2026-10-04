@@ -1303,33 +1303,37 @@ ipcMain.handle("tools:execute", async (_event, toolCall) => {
       const clickScript = `Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public class KGroundClick { [DllImport("user32.dll")] public static extern bool SetCursorPos(int X,int Y); [DllImport("user32.dll")] public static extern void mouse_event(uint f,uint dx,uint dy,uint d,uint e); }'; [KGroundClick]::SetCursorPos(${desktopX},${desktopY}) | Out-Null; Start-Sleep -Milliseconds 100; [KGroundClick]::mouse_event(2,0,0,0,0); Start-Sleep -Milliseconds 40; [KGroundClick]::mouse_event(4,0,0,0,0)`;
       await execFileAsync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", clickScript]);
 
-      await new Promise((resolve) => setTimeout(resolve, 650));
-      const afterPath = path.join(dataDir, `verify-${Date.now()}.png`);
-      const afterEncodedPath = Buffer.from(afterPath, "utf16le").toString("base64");
-      const verifyCaptureScript = `Add-Type -AssemblyName System.Windows.Forms; Add-Type -AssemblyName System.Drawing; $p=[Text.Encoding]::Unicode.GetString([Convert]::FromBase64String('${afterEncodedPath}')); $b=[System.Windows.Forms.SystemInformation]::VirtualScreen; $bmp=New-Object Drawing.Bitmap $b.Width,$b.Height; $g=[Drawing.Graphics]::FromImage($bmp); $g.CopyFromScreen($b.Location,[Drawing.Point]::Empty,$b.Size); $bmp.Save($p,[Drawing.Imaging.ImageFormat]::Png); $g.Dispose(); $bmp.Dispose()`;
-      await execFileAsync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", verifyCaptureScript]);
-      const afterBytes = await fs.readFile(afterPath);
-      const afterImageUrl = `data:image/png;base64,${afterBytes.toString("base64")}`;
-      const verifyResponse = await fetch("https://api.openai.com/v1/responses", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: "gpt-6-luna",
-          input: [{
-            role: "user",
-            content: [
-              { type: "input_text", text: `A desktop assistant clicked the visible target "${target}". Compare BEFORE and AFTER. Return ONLY compact JSON with keys changed, targetSucceeded, confidence, description. targetSucceeded should be true only when the AFTER image visibly supports that the requested target opened, activated, selected, or otherwise produced its expected UI change. Never infer success merely from the mouse click.` },
-              { type: "input_image", image_url: imageUrl, detail: "low" },
-              { type: "input_image", image_url: afterImageUrl, detail: "low" }
-            ]
-          }]
-        })
-      });
       let verification = { changed: false, targetSucceeded: false, confidence: 0, description: "Verification unavailable." };
-      if (verifyResponse.ok) {
-        const verifyData = await verifyResponse.json();
-        const verifyText = verifyData.output_text || verifyData.output?.flatMap((item) => item.content || []).find((part) => part.type === "output_text")?.text || "";
-        try { verification = { ...verification, ...JSON.parse(verifyText) }; } catch {}
+      const verificationDelays = [350, 700, 1200];
+      for (let attempt = 0; attempt < verificationDelays.length; attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, verificationDelays[attempt]));
+        const afterPath = path.join(dataDir, `verify-${Date.now()}-${attempt}.png`);
+        const afterEncodedPath = Buffer.from(afterPath, "utf16le").toString("base64");
+        const verifyCaptureScript = `Add-Type -AssemblyName System.Windows.Forms; Add-Type -AssemblyName System.Drawing; $p=[Text.Encoding]::Unicode.GetString([Convert]::FromBase64String('${afterEncodedPath}')); $b=[System.Windows.Forms.SystemInformation]::VirtualScreen; $bmp=New-Object Drawing.Bitmap $b.Width,$b.Height; $g=[Drawing.Graphics]::FromImage($bmp); $g.CopyFromScreen($b.Location,[Drawing.Point]::Empty,$b.Size); $bmp.Save($p,[Drawing.Imaging.ImageFormat]::Png); $g.Dispose(); $bmp.Dispose()`;
+        await execFileAsync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", verifyCaptureScript]);
+        const afterBytes = await fs.readFile(afterPath);
+        const afterImageUrl = `data:image/png;base64,${afterBytes.toString("base64")}`;
+        const verifyResponse = await fetch("https://api.openai.com/v1/responses", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+          body: JSON.stringify({
+            model: "gpt-6-luna",
+            input: [{
+              role: "user",
+              content: [
+                { type: "input_text", text: `A desktop assistant clicked the visible target "${target}". Compare BEFORE and AFTER. Return ONLY compact JSON with keys changed, targetSucceeded, confidence, description. targetSucceeded should be true only when the AFTER image visibly supports that the requested target opened, activated, selected, or otherwise produced its expected UI change. Never infer success merely from the mouse click.` },
+                { type: "input_image", image_url: imageUrl, detail: "low" },
+                { type: "input_image", image_url: afterImageUrl, detail: "low" }
+              ]
+            }]
+          })
+        });
+        if (verifyResponse.ok) {
+          const verifyData = await verifyResponse.json();
+          const verifyText = verifyData.output_text || verifyData.output?.flatMap((item) => item.content || []).find((part) => part.type === "output_text")?.text || "";
+          try { verification = { ...verification, ...JSON.parse(verifyText) }; } catch {}
+        }
+        if (verification.targetSucceeded === true && Number(verification.confidence || 0) >= 0.55) break;
       }
       const verified = verification.targetSucceeded === true && Number(verification.confidence || 0) >= 0.55;
       return {
