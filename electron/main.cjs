@@ -1,5 +1,5 @@
 const { app, BrowserWindow, ipcMain, nativeImage, screen } = require("electron");
-const { execFile } = require("node:child_process");
+const { execFile, spawn } = require("node:child_process");
 const { promisify } = require("node:util");
 const path = require("node:path");
 const fs = require("node:fs/promises");
@@ -15,6 +15,7 @@ let currentMode = "display";
 let mainWindow = null;
 let normalWindowBounds = null;
 let dbWriteQueue = Promise.resolve();
+let wakeWordProcess = null;
 
 const KRILLY_INSTRUCTIONS = `# Role and Objective
 You are Krilly, Krish's personal desktop AI operator. Krish is the user's name, but when speaking directly to him address him as SIR by default. Do not routinely call him Krish unless his actual name is relevant. You speak through realtime voice and can use local tools.
@@ -516,6 +517,67 @@ async function createWindow() {
     await win.loadFile(path.join(process.cwd(), "dist", "index.html"));
   }
 }
+
+function stopWakeWordListener() {
+  if (wakeWordProcess) {
+    wakeWordProcess.kill();
+    wakeWordProcess = null;
+  }
+}
+
+function startWakeWordListener() {
+  if (process.platform !== "win32") return { ok: false, error: "Wake word is currently Windows-only." };
+  if (wakeWordProcess) return { ok: true, listening: true };
+
+  const script = [
+    "Add-Type -AssemblyName System.Speech",
+    "$recognizer = New-Object System.Speech.Recognition.SpeechRecognitionEngine",
+    "$choices = New-Object System.Speech.Recognition.Choices",
+    "$choices.Add(@('Krilly','Crilly','Krilli','Krillie'))",
+    "$grammarBuilder = New-Object System.Speech.Recognition.GrammarBuilder($choices)",
+    "$grammar = New-Object System.Speech.Recognition.Grammar($grammarBuilder)",
+    "$recognizer.LoadGrammar($grammar)",
+    "$recognizer.SetInputToDefaultAudioDevice()",
+    "$recognizer.add_SpeechRecognized({ param($sender,$eventArgs) if ($eventArgs.Result.Confidence -ge 0.50) { [Console]::Out.WriteLine('KRILLY_WAKE'); [Console]::Out.Flush() } })",
+    "$recognizer.RecognizeAsync([System.Speech.Recognition.RecognizeMode]::Multiple)",
+    "while ($true) { Start-Sleep -Milliseconds 500 }",
+  ].join("; ");
+
+  const child = spawn("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script], {
+    windowsHide: true,
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  wakeWordProcess = child;
+
+  let stdoutBuffer = "";
+  child.stdout.on("data", (chunk) => {
+    stdoutBuffer += chunk.toString();
+    const lines = stdoutBuffer.split(/\\r?\\n/);
+    stdoutBuffer = lines.pop() || "";
+    for (const line of lines) {
+      if (line.trim() === "KRILLY_WAKE") {
+        stopWakeWordListener();
+        if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("wake-word:detected");
+        break;
+      }
+    }
+  });
+
+  child.on("error", (error) => {
+    if (wakeWordProcess === child) wakeWordProcess = null;
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("wake-word:error", error.message);
+  });
+  child.on("exit", () => {
+    if (wakeWordProcess === child) wakeWordProcess = null;
+  });
+  return { ok: true, listening: true };
+}
+
+ipcMain.handle("wake-word:start", () => startWakeWordListener());
+ipcMain.handle("wake-word:stop", () => {
+  stopWakeWordListener();
+  return { ok: true, listening: false };
+});
 
 function setWindowMode(mode) {
   if (!mainWindow || mainWindow.isDestroyed()) return;
@@ -1582,6 +1644,7 @@ function fallbackMermaidDiagram(title) {
 app.whenReady().then(createWindow);
 
 app.on("window-all-closed", () => {
+  stopWakeWordListener();
   if (process.platform !== "darwin") app.quit();
 });
 
