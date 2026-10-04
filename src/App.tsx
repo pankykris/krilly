@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { BrainCircuit, Expand, History, Keyboard, Mic, MicOff, MonitorCog, PanelRight, Send } from "lucide-react";
+import { BrainCircuit, CalendarDays, CheckSquare2, Expand, History, Keyboard, Mic, MicOff, MonitorCog, PanelRight, Send, Sparkles } from "lucide-react";
 import { ArtifactPanel } from "./components/ArtifactPanel";
 import { KrillyFace } from "./components/RickyFace";
 import { newEntry, KrillyRealtimeClient, type MouthShape, type KrillyConnectionState, type KrillyMood, type TranscriptEntry } from "./lib/realtime";
@@ -18,7 +18,7 @@ export default function App() {
   const [showTypeInput, setShowTypeInput] = useState(false);
   const [mouthShape, setMouthShape] = useState<MouthShape>({ open: 0, width: 0.18, round: 0, teeth: 0 });
   const [transcript, setTranscript] = useState<TranscriptEntry[]>([
-    newEntry("system", "Krilly is ready. Connect voice, then talk naturally."),
+    newEntry("system", "Krilly is ready. Press Ctrl + Space to wake her, then talk naturally."),
   ]);
   const [status, setStatus] = useState("Idle");
   const [textPrompt, setTextPrompt] = useState("");
@@ -67,34 +67,18 @@ export default function App() {
     clientRef.current?.disconnect();
     clientRef.current = null;
     connectingRef.current = false;
-    setStatus("Standby. Say Krilly to wake me.");
-    void window.krilly.startWakeWord();
+    setStatus("Standby. Press Ctrl + Space to wake Krilly.");
   }
 
   useEffect(() => {
-    let active = true;
-    const removeWake = window.krilly.onWakeWord(() => {
-      if (!active || clientRef.current || connectingRef.current) return;
-      setStatus("Wake word heard. Connecting...");
-      setTranscript((items) => [newEntry("system", "Wake word heard. Connecting Krilly."), ...items].slice(0, 80));
-      void connect();
-    });
-    const removeWakeError = window.krilly.onWakeWordError((message) => {
-      if (!active) return;
-      setStatus(`Wake-word listener error: ${message}`);
-    });
-
-    void window.krilly.startWakeWord().then((result) => {
-      if (!active) return;
-      if (result.ok) setStatus("Standby. Say Krilly to wake me.");
-      else if (result.error) setStatus(`Wake-word listener unavailable: ${result.error}`);
-    });
-
-    return () => {
-      active = false;
-      removeWake();
-      removeWakeError();
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.ctrlKey && event.code === "Space") {
+        event.preventDefault();
+        if (!clientRef.current && !connectingRef.current) void connect();
+      }
     };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
 
   async function switchMode(nextMode: KrillyMode) {
@@ -143,10 +127,17 @@ export default function App() {
       <div className="window-drag-strip" aria-hidden="true" />
       <div className="window-drag-left-zone" aria-hidden="true" />
       <section className="companion-window">
+        <header className="krilly-topbar"><div className="brand-mark">KRILLY</div><div className={`presence-dot ${isConnected ? "online" : ""}`}><span />{isConnected ? "LIVE" : "STANDBY"}</div></header>
         <section className="face-stage">
-          <KrillyFace mood={mood} mouthShape={mouthShape} />
+          <div className="core-wrap"><div className="core-halo" /><KrillyFace mood={mood} mouthShape={mouthShape} /></div>
+          <div className="krilly-state"><Sparkles size={14}/><strong>{isConnected ? (mood === "speaking" ? "Speaking" : mood === "thinking" ? "Thinking" : "Listening") : "Ready when you are"}</strong><span>{isConnected ? "Hands-free session active" : "Ctrl + Space to wake Krilly"}</span></div>
         </section>
 
+        <section className="glance-row">
+          <button className="glance-card"><CalendarDays size={16}/><span><small>NEXT UP</small><strong>Today</strong></span></button>
+          <button className="glance-card"><CheckSquare2 size={16}/><span><small>TASKS</small><strong>Open command centre</strong></span></button>
+          <button className="glance-card"><BrainCircuit size={16}/><span><small>KRILLY</small><strong>{status}</strong></span></button>
+        </section>
         <footer className="bottom-console">
           {showTypeInput ? (
             <section className="prompt-box">
