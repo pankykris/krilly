@@ -1169,8 +1169,9 @@ ipcMain.handle("tools:execute", async (_event, toolCall) => {
       if (process.platform === "win32") {
         const winKeys = { enter: "{ENTER}", return: "{ENTER}", tab: "{TAB}", escape: "{ESC}", delete: "{DELETE}", space: " ", up: "{UP}", down: "{DOWN}", left: "{LEFT}", right: "{RIGHT}" };
         const token = winKeys[String(args.key || "").toLowerCase()];
-        const script = `Add-Type -AssemblyName System.Windows.Forms; 1..${repeat} | ForEach-Object { [System.Windows.Forms.SendKeys]::SendWait($args[0]) }`;
-        await execFileAsync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script, token]);
+        const encodedToken = Buffer.from(token, "utf16le").toString("base64");
+        const script = `Add-Type -AssemblyName System.Windows.Forms; $k=[Text.Encoding]::Unicode.GetString([Convert]::FromBase64String('${encodedToken}')); 1..${repeat} | ForEach-Object { [System.Windows.Forms.SendKeys]::SendWait($k) }`;
+        await execFileAsync("powershell.exe", ["-NoProfile", "-STA", "-NonInteractive", "-Command", script]);
       } else if (process.platform === "darwin") {
         await execFileAsync("osascript", ["-e", `tell application "System Events" to repeat ${repeat} times\nkey code ${keyCode}\nend repeat`]);
       } else return { ok: false, error: "Key presses are not implemented for this operating system yet." };
