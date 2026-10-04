@@ -1,33 +1,33 @@
 import { useRef, useState } from "react";
 import { BrainCircuit, Expand, History, Keyboard, Mic, MicOff, MonitorCog, PanelRight, Send } from "lucide-react";
 import { ArtifactPanel } from "./components/ArtifactPanel";
-import { RickyFace } from "./components/RickyFace";
-import { newEntry, RickyRealtimeClient, type MouthShape, type RickyConnectionState, type RickyMood, type TranscriptEntry } from "./lib/realtime";
-import type { RickyArtifact } from "./vite-env";
+import { KrillyFace } from "./components/KrillyFace";
+import { newEntry, KrillyRealtimeClient, type MouthShape, type KrillyConnectionState, type KrillyMood, type TranscriptEntry } from "./lib/realtime";
+import type { KrillyArtifact } from "./vite-env";
 
-type RickyMode = "display" | "computer";
+type KrillyMode = "display" | "computer";
 
 export default function App() {
-  const [connectionState, setConnectionState] = useState<RickyConnectionState>("idle");
-  const [mood, setMood] = useState<RickyMood>("idle");
-  const [mode, setMode] = useState<RickyMode>("display");
-  const [artifact, setArtifact] = useState<RickyArtifact | null>(null);
+  const [connectionState, setConnectionState] = useState<KrillyConnectionState>("idle");
+  const [mood, setMood] = useState<KrillyMood>("idle");
+  const [mode, setMode] = useState<KrillyMode>("display");
+  const [artifact, setArtifact] = useState<KrillyArtifact | null>(null);
   const [artifactVisible, setArtifactVisible] = useState(true);
   const [artifactFullscreen, setArtifactFullscreen] = useState(false);
   const [showLog, setShowLog] = useState(false);
   const [showTypeInput, setShowTypeInput] = useState(false);
   const [mouthShape, setMouthShape] = useState<MouthShape>({ open: 0, width: 0.18, round: 0, teeth: 0 });
   const [transcript, setTranscript] = useState<TranscriptEntry[]>([
-    newEntry("system", "Ricky is ready. Connect voice, then talk naturally."),
+    newEntry("system", "Krilly is ready. Connect voice, then talk naturally."),
   ]);
   const [status, setStatus] = useState("Idle");
   const [textPrompt, setTextPrompt] = useState("");
-  const clientRef = useRef<RickyRealtimeClient | null>(null);
+  const clientRef = useRef<KrillyRealtimeClient | null>(null);
 
   const isConnected = connectionState === "connected";
 
   async function connect() {
-    const client = new RickyRealtimeClient({
+    const client = new KrillyRealtimeClient({
       onConnectionState: setConnectionState,
       onMood: setMood,
       onMouthShape: setMouthShape,
@@ -64,9 +64,9 @@ export default function App() {
     setStatus("Disconnected");
   }
 
-  async function switchMode(nextMode: RickyMode) {
+  async function switchMode(nextMode: KrillyMode) {
     setMode(nextMode);
-    const result = await window.ricky.executeTool({ name: "set_mode", arguments: { mode: nextMode } });
+    const result = await window.krilly.executeTool({ name: "set_mode", arguments: { mode: nextMode } });
     if (result.artifact) setArtifact(result.artifact);
     if (nextMode === "computer") {
       setArtifactVisible(false);
@@ -90,13 +90,13 @@ export default function App() {
   if (mode === "computer") {
     return (
       <main className="app-shell app-shell-mini">
-        <section className="mini-companion" aria-label="Ricky computer use mini mode">
-          <RickyFace mood={mood} mouthShape={mouthShape} />
+        <section className="mini-companion" aria-label="Krilly computer use mini mode">
+          <KrillyFace mood={mood} mouthShape={mouthShape} />
           <button
             className="mini-restore-button"
             onClick={() => void switchMode("display")}
-            aria-label="Return to full Ricky window"
-            title="Return to full Ricky window"
+            aria-label="Return to full Krilly window"
+            title="Return to full Krilly window"
           >
             <Expand size={14} />
           </button>
@@ -111,7 +111,7 @@ export default function App() {
       <div className="window-drag-left-zone" aria-hidden="true" />
       <section className="companion-window">
         <section className="face-stage">
-          <RickyFace mood={mood} mouthShape={mouthShape} />
+          <KrillyFace mood={mood} mouthShape={mouthShape} />
         </section>
 
         <footer className="bottom-console">
@@ -124,7 +124,7 @@ export default function App() {
                   if (event.key === "Enter") sendTextPrompt();
                 }}
                 autoFocus
-                placeholder="Type to Ricky..."
+                placeholder="Type to Krilly..."
               />
               <button onClick={sendTextPrompt} aria-label="Send typed prompt" title="Send typed prompt">
                 <Send size={15} />
@@ -145,8 +145,8 @@ export default function App() {
             <button
               className={showTypeInput ? "simple-button active" : "simple-button"}
               onClick={() => setShowTypeInput((value) => !value)}
-              aria-label="Type to Ricky"
-              title="Type to Ricky"
+              aria-label="Type to Krilly"
+              title="Type to Krilly"
             >
               <Keyboard size={16} />
             </button>
@@ -195,7 +195,7 @@ export default function App() {
               {transcript.map((entry) => (
                 <article className={`entry entry-${entry.role}`} key={entry.id}>
                   <div>
-                    <strong>{entry.role === "ricky" ? "Ricky" : entry.role}</strong>
+                    <strong>{entry.role === "krilly" ? "Krilly" : entry.role}</strong>
                     <time>{entry.at}</time>
                   </div>
                   <p>{entry.text}</p>
