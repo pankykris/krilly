@@ -67,12 +67,14 @@ export default function App() {
     clientRef.current?.disconnect();
     clientRef.current = null;
     connectingRef.current = false;
-    setStatus("Standby. Press Press Space to wake Krilly.");
+    setStatus("Standby. Press Space to wake Krilly.");
   }
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      const target = event.target as HTMLElement | null;\n      const isTyping = target?.tagName === "INPUT" || target?.tagName === "TEXTAREA" || target?.isContentEditable;\n      if (event.code === "Space" && !event.ctrlKey && !event.altKey && !event.metaKey && !isTyping) {
+      const target = event.target as HTMLElement | null;
+      const isTyping = target?.tagName === "INPUT" || target?.tagName === "TEXTAREA" || target?.isContentEditable;
+      if (event.code === "Space" && !event.ctrlKey && !event.altKey && !event.metaKey && !isTyping) {
         event.preventDefault();
         if (!clientRef.current && !connectingRef.current) void connect();
       }
