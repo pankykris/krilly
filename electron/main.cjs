@@ -1127,7 +1127,17 @@ ipcMain.handle("tools:execute", async (_event, toolCall) => {
       const appName = String(args.appName || "").trim();
       if (!appName) return { ok: false, error: "App name is required." };
       if (process.platform === "win32") {
-        await execFileAsync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", "Start-Process -FilePath $args[0]", appName]);
+        const windowsAppAliases = {
+          notepad: "notepad.exe",
+          "file explorer": "explorer.exe",
+          explorer: "explorer.exe",
+          calculator: "calc.exe",
+          paint: "mspaint.exe",
+        };
+        const requestedApp = windowsAppAliases[appName.toLowerCase()] || appName;
+        const encodedApp = Buffer.from(requestedApp, "utf16le").toString("base64");
+        const script = `$app=[Text.Encoding]::Unicode.GetString([Convert]::FromBase64String('${encodedApp}')); Start-Process -FilePath $app`;
+        await execFileAsync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script]);
       } else if (process.platform === "darwin") {
         await execFileAsync("open", ["-a", appName]);
       } else {
