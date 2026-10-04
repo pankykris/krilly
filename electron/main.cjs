@@ -1274,7 +1274,7 @@ ipcMain.handle("tools:execute", async (_event, toolCall) => {
           if (Number.isFinite(accessibilityX) && Number.isFinite(accessibilityY) && myGeneration === visualClickGeneration) {
             const clickScript = `Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public class KAccClick { [DllImport("user32.dll")] public static extern bool SetCursorPos(int X,int Y); [DllImport("user32.dll")] public static extern void mouse_event(uint f,uint dx,uint dy,uint d,uint e); }'; [KAccClick]::SetCursorPos(${accessibilityX},${accessibilityY}) | Out-Null; Start-Sleep -Milliseconds 60; [KAccClick]::mouse_event(2,0,0,0,0); Start-Sleep -Milliseconds 30; [KAccClick]::mouse_event(4,0,0,0,0)`;
             await execFileAsync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", clickScript]);
-            return { ok: true, target, x: accessibilityX, y: accessibilityY, locator: "accessibility", clickIssued: true, verified: false, message: `Clicked "${target}" using its Windows accessibility control.` };
+            return { ok: true, target, x: accessibilityX, y: accessibilityY, locator: "accessibility-focused-window", clickIssued: true, verified: false, message: `Clicked "${target}" inside the focused window.` };
           }
         }
       } catch {
