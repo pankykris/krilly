@@ -1258,6 +1258,28 @@ ipcMain.handle("tools:execute", async (_event, toolCall) => {
       if (!apiKey) return { ok: false, error: "OPENAI_API_KEY is missing." };
 
       const myGeneration = ++visualClickGeneration;
+
+      // Fast path: ask Windows UI Automation for a real interactive control with this accessible name.
+      // This avoids vision/coordinate guessing for normal browser and desktop controls.
+      try {
+        const encodedTarget = Buffer.from(target, "utf16le").toString("base64");
+        const automationScript = `Add-Type -AssemblyName UIAutomationClient; Add-Type -AssemblyName UIAutomationTypes; $t=[Text.Encoding]::Unicode.GetString([Convert]::FromBase64String('${encodedTarget}')); $root=[Windows.Automation.AutomationElement]::FocusedElement; if($null -eq $root){exit 3}; while($root.Current.Parent -ne $null){$root=$root.Current.Parent}; $all=$root.FindAll([Windows.Automation.TreeScope]::Descendants,[Windows.Automation.Condition]::TrueCondition); $best=$null; $bestScore=-1; foreach($e in $all){ try{$n=$e.Current.Name; $ct=$e.Current.ControlType.ProgrammaticName; $r=$e.Current.BoundingRectangle; if([string]::IsNullOrWhiteSpace($n) -or $r.Width -le 1 -or $r.Height -le 1){continue}; $score=0; if($n -ieq $t){$score=100} elseif($n -like ('*'+$t+'*')){$score=70} elseif($t -like ('*'+$n+'*')){$score=50}; if($ct -match 'Button|Hyperlink|TabItem|MenuItem|ListItem' -and $score -gt 0){$score+=20}; if($score -gt $bestScore){$best=$e;$bestScore=$score} }catch{} }; if($null -ne $best -and $bestScore -ge 70){$r=$best.Current.BoundingRectangle; Write-Output ('FOUND|'+$bestScore+'|'+[math]::Round($r.Left+$r.Width/2)+'|'+[math]::Round($r.Top+$r.Height/2)+'|'+$best.Current.Name+'|'+$best.Current.ControlType.ProgrammaticName)} else {Write-Output 'NOT_FOUND'}`;
+        const { stdout: automationOut } = await execFileAsync("powershell.exe", ["-NoProfile", "-STA", "-NonInteractive", "-Command", automationScript]);
+        const line = automationOut.trim();
+        if (line.startsWith("FOUND|")) {
+          const parts = line.split("|");
+          const accessibilityX = Number(parts[2]);
+          const accessibilityY = Number(parts[3]);
+          if (Number.isFinite(accessibilityX) && Number.isFinite(accessibilityY) && myGeneration === visualClickGeneration) {
+            const clickScript = `Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public class KAccClick { [DllImport("user32.dll")] public static extern bool SetCursorPos(int X,int Y); [DllImport("user32.dll")] public static extern void mouse_event(uint f,uint dx,uint dy,uint d,uint e); }'; [KAccClick]::SetCursorPos(${accessibilityX},${accessibilityY}) | Out-Null; Start-Sleep -Milliseconds 60; [KAccClick]::mouse_event(2,0,0,0,0); Start-Sleep -Milliseconds 30; [KAccClick]::mouse_event(4,0,0,0,0)`;
+            await execFileAsync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", clickScript]);
+            return { ok: true, target, x: accessibilityX, y: accessibilityY, locator: "accessibility", clickIssued: true, verified: false, message: `Clicked "${target}" using its Windows accessibility control.` };
+          }
+        }
+      } catch {
+        // Accessibility is a fast path. Fall through to monitor-grounded vision when unavailable.
+      }
+
       await fs.mkdir(dataDir, { recursive: true });
       const screenshotPath = path.join(dataDir, `target-${Date.now()}.png`);
       const encodedPath = Buffer.from(screenshotPath, "utf16le").toString("base64");
