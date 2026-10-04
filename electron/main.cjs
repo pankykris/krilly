@@ -298,7 +298,8 @@ A real risk:
 - If a visual click tool result says cancelled or superseded, do not report it as a failure and do not retry it. A newer user instruction has replaced that action.
 - When Krish asks to "scan accessibility controls", "inspect the accessibility tree", "check accessibility controls", or asks what Windows exposes for a visible control, ALWAYS call ui_accessibility_scan. Do not substitute screen_snapshot, visual inspection, or a description of what accessibility metadata would require. Pass the requested control label in filter when one is named. Report the matching control name, type, and bounds from the tool result concisely.
 - ui_accessibility_scan is diagnostic and read-only. It does not require confirmation and should be called immediately when requested.
-- computer_click_target uses Windows accessibility controls first and vision only as fallback. If locator is "accessibility", do not invent a vision failure or ask Krish to click manually. Keep the acknowledgement short and let the next user instruction continue naturally.
+- For ordinary named Windows controls, computer_click_target uses Microsoft WinApp UI Automation first, scoped to the foreground window handle. Trust a successful winapp-invoke or winapp-safe-click result. Do not run an additional screenshot click, speculate that the control is off-screen, or ask Krish to click it manually. Use legacy accessibility/vision only if WinApp explicitly fails.
+- computer_click_target uses legacy Windows accessibility controls after WinApp and vision only as fallback. If locator is "accessibility", do not invent a vision failure or ask Krish to click manually. Keep the acknowledgement short and let the next user instruction continue naturally.
 - For simple computer commands, act immediately instead of narrating the action first. Keep the final spoken result extremely short: for example "Opened." or "I clicked it, but couldn't verify the result." Avoid filler such as "All right, let me look for that now." Stay silent while a routine computer action is running unless Krish asks for progress or the action genuinely needs his intervention.
 - Before longer tool work, explain what you are doing in one short sentence only when that explanation is useful.
 
@@ -1271,6 +1272,33 @@ ipcMain.handle("tools:execute", async (_event, toolCall) => {
       if (!target) return { ok: false, error: "A visible target name is required." };
       const apiKey = process.env.OPENAI_API_KEY;
       if (!apiKey) return { ok: false, error: "OPENAI_API_KEY is missing." };
+
+      // Primary V1 Windows automation path: Microsoft WinApp CLI.
+      // Scope every action to the current foreground HWND so duplicate labels on other monitors cannot steal the action.
+      try {
+        const hwndScript = `Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public class KWinAppForeground { [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow(); }'; [KWinAppForeground]::GetForegroundWindow().ToInt64()`;
+        const { stdout: hwndOut } = await execFileAsync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", hwndScript]);
+        const hwnd = hwndOut.trim();
+        if (/^\\d+$/.test(hwnd) && hwnd !== "0") {
+          const npxCommand = process.platform === "win32" ? "npx.cmd" : "npx";
+          const invokeArgs = ["--no-install", "winapp", "ui", "invoke", target, "-w", hwnd, "--json"];
+          try {
+            const { stdout: invokeOut } = await execFileAsync(npxCommand, invokeArgs, { cwd: process.cwd(), timeout: 8000, windowsHide: true });
+            return { ok: true, target, hwnd, locator: "winapp-invoke", clickIssued: true, verified: true, output: invokeOut.trim(), message: `Activated "${target}" through Microsoft WinApp UI Automation.` };
+          } catch (invokeError) {
+            // Some web controls expose a name but not InvokePattern. WinApp click safely re-resolves the element before injecting input.
+            try {
+              const clickArgs = ["--no-install", "winapp", "ui", "click", target, "-w", hwnd, "--json"];
+              const { stdout: clickOut } = await execFileAsync(npxCommand, clickArgs, { cwd: process.cwd(), timeout: 8000, windowsHide: true });
+              return { ok: true, target, hwnd, locator: "winapp-safe-click", clickIssued: true, verified: true, output: clickOut.trim(), message: `Clicked "${target}" through Microsoft WinApp UI Automation.` };
+            } catch {
+              // Fall through to the legacy accessibility/vision path only when WinApp cannot resolve or activate the control.
+            }
+          }
+        }
+      } catch {
+        // WinApp is the primary path; legacy automation remains as a compatibility fallback.
+      }
 
       const myGeneration = ++visualClickGeneration;
 
