@@ -44,6 +44,7 @@ declare global {
     krilly: {
       createRealtimeToken: () => Promise<{ value: string; expiresAt: number | null }>;
       executeTool: (toolCall: KrillyToolCall) => Promise<KrillyToolResult>;
+      executeLocalCommand: (text: string) => Promise<KrillyToolResult>;
       getToolSpecs: () => Promise<KrillyToolSpec[]>;
       readScreenImage: (screenshotPath: string) => Promise<string>;
       startWakeWord: () => Promise<{ ok: boolean; listening?: boolean; error?: string }>;
