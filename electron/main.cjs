@@ -1232,8 +1232,9 @@ ipcMain.handle("tools:execute", async (_event, toolCall) => {
       const amount = Math.max(1, Math.min(20, Number(args.amount || 4)));
       if (process.platform === "win32") {
         const token = { up: "{PGUP}", down: "{PGDN}", left: "{LEFT}", right: "{RIGHT}" }[direction] || "{PGDN}";
-        const script = `Add-Type -AssemblyName System.Windows.Forms; 1..${amount} | ForEach-Object { [System.Windows.Forms.SendKeys]::SendWait($args[0]) }`;
-        await execFileAsync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script, token]);
+        const encodedToken = Buffer.from(token, "utf16le").toString("base64");
+        const script = `Add-Type -AssemblyName System.Windows.Forms; $k=[Text.Encoding]::Unicode.GetString([Convert]::FromBase64String('${encodedToken}')); 1..${amount} | ForEach-Object { [System.Windows.Forms.SendKeys]::SendWait($k) }`;
+        await execFileAsync("powershell.exe", ["-NoProfile", "-STA", "-NonInteractive", "-Command", script]);
       } else if (process.platform === "darwin") {
         const keyByDirection = { up: 126, down: 125, left: 123, right: 124 };
         const keyCode = keyByDirection[direction] || 125;
@@ -1246,8 +1247,9 @@ ipcMain.handle("tools:execute", async (_event, toolCall) => {
       await fs.mkdir(dataDir, { recursive: true });
       const screenshotPath = path.join(dataDir, `screenshot-${Date.now()}.png`);
       if (process.platform === "win32") {
-        const script = 'Add-Type -AssemblyName System.Windows.Forms; Add-Type -AssemblyName System.Drawing; $b=[System.Windows.Forms.SystemInformation]::VirtualScreen; $bmp=New-Object Drawing.Bitmap $b.Width,$b.Height; $g=[Drawing.Graphics]::FromImage($bmp); $g.CopyFromScreen($b.Location,[Drawing.Point]::Empty,$b.Size); $bmp.Save($args[0],[Drawing.Imaging.ImageFormat]::Png); $g.Dispose(); $bmp.Dispose()';
-        await execFileAsync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script, screenshotPath]);
+        const encodedPath = Buffer.from(screenshotPath, "utf16le").toString("base64");
+        const script = `Add-Type -AssemblyName System.Windows.Forms; Add-Type -AssemblyName System.Drawing; $p=[Text.Encoding]::Unicode.GetString([Convert]::FromBase64String('${encodedPath}')); $b=[System.Windows.Forms.SystemInformation]::VirtualScreen; $bmp=New-Object Drawing.Bitmap $b.Width,$b.Height; $g=[Drawing.Graphics]::FromImage($bmp); $g.CopyFromScreen($b.Location,[Drawing.Point]::Empty,$b.Size); $bmp.Save($p,[Drawing.Imaging.ImageFormat]::Png); $g.Dispose(); $bmp.Dispose()`;
+        await execFileAsync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script]);
       } else if (process.platform === "darwin") {
         await execFileAsync("screencapture", ["-x", screenshotPath]);
       } else return { ok: false, error: "Screenshots are not implemented for this operating system yet." };
