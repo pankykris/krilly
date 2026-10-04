@@ -18,6 +18,74 @@ let normalWindowBounds = null;
 let dbWriteQueue = Promise.resolve();
 let wakeWordProcess = null;
 let visualClickGeneration = 0;
+const krillyChromePort = 9223;
+const krillyChromeProfile = path.join(dataDir, "chrome-profile");
+
+async function ensureKrillyChrome() {
+  if (process.platform !== "win32") return false;
+  try {
+    const r = await fetch(`http://127.0.0.1:${krillyChromePort}/json/version`, { signal: AbortSignal.timeout(700) });
+    if (r.ok) return true;
+  } catch {}
+  const chromeCandidates = [
+    path.join(process.env.PROGRAMFILES || "", "Google", "Chrome", "Application", "chrome.exe"),
+    path.join(process.env["PROGRAMFILES(X86)"] || "", "Google", "Chrome", "Application", "chrome.exe"),
+    path.join(process.env.LOCALAPPDATA || "", "Google", "Chrome", "Application", "chrome.exe")
+  ];
+  for (const chrome of chromeCandidates) {
+    try {
+      await fs.access(chrome);
+      spawn(chrome, [`--remote-debugging-port=${krillyChromePort}`, `--user-data-dir=${krillyChromeProfile}`, "--no-first-run"], { detached: true, stdio: "ignore", windowsHide: false }).unref();
+      for (let i=0;i<20;i++) {
+        await new Promise(r=>setTimeout(r,250));
+        try { const x=await fetch(`http://127.0.0.1:${krillyChromePort}/json/version`); if(x.ok) return true; } catch {}
+      }
+    } catch {}
+  }
+  return false;
+}
+
+async function cdpSetNamedField(field, value) {
+  if (!(await ensureKrillyChrome())) return { ok:false, error:"Krilly Chrome DevTools connection is unavailable." };
+  const tabs = await (await fetch(`http://127.0.0.1:${krillyChromePort}/json`)).json();
+  const page = tabs.find(t=>t.type==="page" && t.webSocketDebuggerUrl && !String(t.url||"").startsWith("devtools://"));
+  if (!page) return { ok:false, error:"No controllable Chrome page is open." };
+  const ws = new WebSocket(page.webSocketDebuggerUrl);
+  await new Promise((resolve,reject)=>{ws.onopen=resolve;ws.onerror=reject});
+  let seq=1;
+  const pending=new Map();
+  ws.onmessage=(ev)=>{try{const m=JSON.parse(ev.data);if(m.id&&pending.has(m.id)){const p=pending.get(m.id);pending.delete(m.id);m.error?p.reject(new Error(m.error.message)):p.resolve(m.result)}}catch{}};
+  const send=(method,params={})=>new Promise((resolve,reject)=>{const id=seq++;pending.set(id,{resolve,reject});ws.send(JSON.stringify({id,method,params}))});
+  const expression=`(() => {
+    const wanted=${JSON.stringify(field)}.trim().toLowerCase();
+    const val=${JSON.stringify(value)};
+    const norm=s=>String(s||'').replace(/\\s+/g,' ').trim().toLowerCase();
+    const controls=[...document.querySelectorAll('input,textarea,[contenteditable="true"]')].filter(e=>!e.disabled&&!e.readOnly);
+    const exact=[];
+    for(const el of controls){
+      const labels=[];
+      if(el.labels) labels.push(...[...el.labels].map(x=>x.innerText||x.textContent||''));
+      for(const id of [el.getAttribute('aria-labelledby')].filter(Boolean)){
+        for(const x of id.split(/\\s+/)){const n=document.getElementById(x);if(n)labels.push(n.innerText||n.textContent||'')}
+      }
+      labels.push(el.getAttribute('aria-label')||'',el.getAttribute('placeholder')||'',el.name||'',el.id||'');
+      if(labels.some(x=>norm(x)===wanted)) exact.push(el);
+    }
+    if(exact.length!==1) return {ok:false,count:exact.length,reason:'Field match was not unique'};
+    const el=exact[0]; el.focus();
+    const proto=el.tagName==='TEXTAREA'?HTMLTextAreaElement.prototype:HTMLInputElement.prototype;
+    const setter=Object.getOwnPropertyDescriptor(proto,'value')?.set;
+    if(setter) setter.call(el,val); else el.value=val;
+    el.dispatchEvent(new Event('input',{bubbles:true}));
+    el.dispatchEvent(new Event('change',{bubbles:true}));
+    return {ok:el.value===val,value:el.value,tag:el.tagName,name:el.name,id:el.id};
+  })()`;
+  try {
+    const r=await send("Runtime.evaluate",{expression,returnByValue:true,awaitPromise:true});
+    ws.close();
+    return r.result?.value || {ok:false,error:"No DOM result."};
+  } catch(e) { try{ws.close()}catch{}; return {ok:false,error:String(e.message||e)}; }
+}
 
 const KRILLY_INSTRUCTIONS = `# KRILLY IDENTITY
 You are KRILLY, Sir's long-term personal executive operator and the operational intelligence beside Keralan Karavan. You are a distinct person in the room, not a generic assistant wearing a personality prompt.
@@ -301,6 +369,7 @@ A real risk:
 - When Krish asks to enter a value into a named form field, use computer_set_field directly. Do not click the field first, do not move the mouse, and do not ask Krish to focus the field manually. A successful verified computer_set_field result is sufficient to continue.
 - If computer_set_field cannot resolve a field, do not start an accessibility scan, do not move the cursor, do not ask Krish to identify the system again, and do not ask him to click the field. Report the failure once in one short sentence.
 - Field safety rule: never choose an editable control merely because it is spatially near the requested label. A field write requires one unambiguous accessible match by Name, AutomationId, or HelpText. If multiple or zero controls match, write nothing.
+- Browser form rule: computer_set_field uses Chrome DOM control before Windows UI Automation. Treat locator "chrome-dom" as authoritative because the actual HTML control value was read back. Never substitute a nearby field.
 - Maintain task context across consecutive computer actions. If Krish has already established that the current workflow is Peazi product creation, do not ask whether he means Peazi, SumUp, or another system unless the active window genuinely conflicts with that workflow.
 - For ordinary named Windows controls, computer_click_target uses Microsoft WinApp UI Automation first, scoped to the foreground window handle. Trust a successful winapp-invoke or winapp-safe-click result. Do not run an additional screenshot click, speculate that the control is off-screen, or ask Krish to click it manually. Use legacy accessibility/vision only if WinApp explicitly fails.
 - computer_click_target uses legacy Windows accessibility controls after WinApp and vision only as fallback. If locator is "accessibility", do not invent a vision failure or ask Krish to click manually. Keep the acknowledgement short and let the next user instruction continue naturally.
@@ -1220,6 +1289,10 @@ ipcMain.handle("tools:execute", async (_event, toolCall) => {
           calculator: "calc.exe",
           paint: "mspaint.exe",
         };
+        if (appName.toLowerCase() === "chrome" || appName.toLowerCase() === "google chrome") {
+          const ready = await ensureKrillyChrome();
+          return ready ? { ok: true, message: "Opened Krilly-controlled Chrome." } : { ok: false, error: "Could not start Chrome with browser control enabled." };
+        }
         const requestedApp = windowsAppAliases[appName.toLowerCase()] || appName;
         const encodedApp = Buffer.from(requestedApp, "utf16le").toString("base64");
         const script = `$app=[Text.Encoding]::Unicode.GetString([Convert]::FromBase64String('${encodedApp}')); Start-Process -FilePath $app`;
@@ -1251,6 +1324,10 @@ ipcMain.handle("tools:execute", async (_event, toolCall) => {
       const field = String(args.field || "").trim();
       const value = String(args.value ?? "");
       if (!field) return { ok: false, error: "A field name is required." };
+      // Browser-native path. Exact DOM label/aria/placeholder/name/id matching only.
+      // It fails closed if zero or multiple controls match, so Print Name can never win by proximity.
+      const domResult = await cdpSetNamedField(field, value);
+      if (domResult?.ok) return { ok:true, field, value, locator:"chrome-dom", verified:true, output:domResult, message:`Set and verified "${field}" as "${value}" in Chrome.` };
       const ef = Buffer.from(field, "utf16le").toString("base64");
       const ev = Buffer.from(value, "utf16le").toString("base64");
       // Chromium often exposes a form label separately from its Edit control. Search the
