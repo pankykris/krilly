@@ -282,7 +282,8 @@ export class KrillyRealtimeClient {
       await this.returnToolOutput(callId, result);
       if (name === "screen_snapshot" && result.ok === true && typeof result.path === "string") {
         try {
-          const imageUrl = await window.krilly.readScreenImage(result.path);
+          const rawImageUrl = await window.krilly.readScreenImage(result.path);
+          const imageUrl = await compactImageDataUrl(rawImageUrl);
           this.sendEvent({
             type: "conversation.item.create",
             item: {
@@ -377,6 +378,21 @@ export class KrillyRealtimeClient {
     this.outputAnalyser = null;
     this.smoothedMouthShape = silentMouthShape();
   }
+}
+
+async function compactImageDataUrl(dataUrl: string): Promise<string> {
+  const image = new Image();
+  image.src = dataUrl;
+  await image.decode();
+  const maxWidth = 1600;
+  const scale = Math.min(1, maxWidth / image.naturalWidth);
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+  canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+  const context = canvas.getContext("2d");
+  if (!context) return dataUrl;
+  context.drawImage(image, 0, 0, canvas.width, canvas.height);
+  return canvas.toDataURL("image/jpeg", 0.78);
 }
 
 function silentMouthShape(): MouthShape {
