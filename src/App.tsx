@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { BrainCircuit, Expand, History, Keyboard, Mic, MicOff, MonitorCog, PanelRight, Send } from "lucide-react";
 import { ArtifactPanel } from "./components/ArtifactPanel";
 import { KrillyFace } from "./components/RickyFace";
@@ -23,10 +23,14 @@ export default function App() {
   const [status, setStatus] = useState("Idle");
   const [textPrompt, setTextPrompt] = useState("");
   const clientRef = useRef<KrillyRealtimeClient | null>(null);
+  const connectingRef = useRef(false);
 
   const isConnected = connectionState === "connected";
 
   async function connect() {
+    if (connectingRef.current || clientRef.current) return;
+    connectingRef.current = true;
+    await window.krilly.stopWakeWord();
     const client = new KrillyRealtimeClient({
       onConnectionState: setConnectionState,
       onMood: setMood,
@@ -56,13 +60,43 @@ export default function App() {
     });
     clientRef.current = client;
     await client.connect();
+    connectingRef.current = false;
   }
 
   function disconnect() {
     clientRef.current?.disconnect();
     clientRef.current = null;
-    setStatus("Disconnected");
+    connectingRef.current = false;
+    setStatus("Standby. Say Krilly to wake me.");
+    void window.krilly.startWakeWord();
   }
+
+  useEffect(() => {
+    let active = true;
+    const removeWake = window.krilly.onWakeWord(() => {
+      if (!active || clientRef.current || connectingRef.current) return;
+      setStatus("Wake word heard. Connecting...");
+      setTranscript((items) => [newEntry("system", "Wake word heard. Connecting Krilly."), ...items].slice(0, 80));
+      void connect();
+    });
+    const removeWakeError = window.krilly.onWakeWordError((message) => {
+      if (!active) return;
+      setStatus(`Wake-word listener error: ${message}`);
+    });
+
+    void window.krilly.startWakeWord().then((result) => {
+      if (!active) return;
+      if (result.ok) setStatus("Standby. Say Krilly to wake me.");
+      else if (result.error) setStatus(`Wake-word listener unavailable: ${result.error}`);
+    });
+
+    return () => {
+      active = false;
+      removeWake();
+      removeWakeError();
+      void window.krilly.stopWakeWord();
+    };
+  }, []);
 
   async function switchMode(nextMode: KrillyMode) {
     setMode(nextMode);
