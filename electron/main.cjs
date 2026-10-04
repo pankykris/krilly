@@ -75,7 +75,13 @@ async function cdpInspectForms() {
       ws.onmessage=ev=>{try{const m=JSON.parse(ev.data);if(m.id===1){clearTimeout(timer);try{ws.close()}catch{};m.error?j(new Error(m.error.message)):r(m.result?.result?.value)}}catch{}};
       ws.send(JSON.stringify({id:1,method:"Runtime.evaluate",params:{expression,returnByValue:true}}));});
   }
-  const pages=[]; for(const page of tabs){try{const data=await evaluate(page);if(data?.controls?.length)pages.push(data)}catch{}}
+  const pages=[]; for(const page of tabs){
+    try{
+      const data=await evaluate(page);
+      if(data?.controls?.length && /console\.peazi\.app\/add-product(?:[/?#]|$)/i.test(String(data.url||""))) pages.push(data);
+    }catch{}
+  }
+  if(!pages.length) return {ok:false,error:"The Peazi Add Product page is not open in Krilly Chrome.",pages:[]};
   return {ok:true,pages};
 }
 
