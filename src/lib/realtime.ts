@@ -280,6 +280,27 @@ export class KrillyRealtimeClient {
       if (result.thumbnailReady === true) this.callbacks.onThumbnailReady();
       if (result.silent !== true) shouldCreateResponse = true;
       await this.returnToolOutput(callId, result);
+      if (name === "screen_snapshot" && result.ok === true && typeof result.path === "string") {
+        try {
+          const imageUrl = await window.krilly.readScreenImage(result.path);
+          this.sendEvent({
+            type: "conversation.item.create",
+            item: {
+              type: "message",
+              role: "user",
+              content: [
+                {
+                  type: "input_text",
+                  text: "This is the screen snapshot you just captured. Inspect the actual image before answering questions about what is visible. Be precise and do not guess unreadable details.",
+                },
+                { type: "input_image", image_url: imageUrl, detail: "high" },
+              ],
+            },
+          });
+        } catch (error) {
+          this.callbacks.onStatus(error instanceof Error ? error.message : String(error));
+        }
+      }
     }
 
     if (shouldCreateResponse) this.sendEvent({ type: "response.create" });
