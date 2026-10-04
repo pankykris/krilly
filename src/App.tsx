@@ -21,11 +21,13 @@ export default function App() {
     newEntry("system", "Krilly is ready. Press Space to wake her, then talk naturally."),
   ]);
   const [status, setStatus] = useState("Idle");
+  const [localLive, setLocalLive] = useState(false);
   const [textPrompt, setTextPrompt] = useState("");
   const clientRef = useRef<KrillyRealtimeClient | null>(null);
   const connectingRef = useRef(false);
 
   const isConnected = connectionState === "connected";
+  const isLive = localLive || isConnected;
 
   async function connect() {
     if (connectingRef.current || clientRef.current) return;
@@ -84,7 +86,11 @@ export default function App() {
       const isTyping = target?.tagName === "INPUT" || target?.tagName === "TEXTAREA" || target?.isContentEditable;
       if (event.code === "Space" && !event.ctrlKey && !event.altKey && !event.metaKey && !isTyping) {
         event.preventDefault();
-        if (!clientRef.current && !connectingRef.current) void connect();
+        if (!localLive) {
+          setLocalLive(true);
+          setStatus("Local Krilly is live. No API credit required.");
+          setTranscript((items) => [newEntry("system", "Local Krilly is live. Computer control is available without OpenAI API credit."), ...items].slice(0, 80));
+        }
       }
     };
     window.addEventListener("keydown", onKeyDown);
@@ -106,10 +112,24 @@ export default function App() {
     setTranscript((items) => [newEntry("system", `Mode switched to ${nextMode}.`), ...items].slice(0, 80));
   }
 
-  function sendTextPrompt() {
+  async function sendTextPrompt() {
     const trimmed = textPrompt.trim();
     if (!trimmed) return;
-    clientRef.current?.sendText(trimmed);
+    if (isConnected && clientRef.current) {
+      clientRef.current.sendText(trimmed);
+    } else {
+      if (!localLive) setLocalLive(true);
+      setTranscript((items) => [newEntry("user", trimmed), ...items].slice(0, 80));
+      const result = await window.krilly.executeLocalCommand(trimmed);
+      const message = String(result.message || result.error || (result.ok ? "Done." : "Local command failed."));
+      setStatus(message);
+      setTranscript((items) => [newEntry("system", message), ...items].slice(0, 80));
+      if (result.artifact) {
+        setArtifact(result.artifact);
+        setArtifactVisible(true);
+      }
+      if (result.mode === "computer") setMode("computer");
+    }
     setTextPrompt("");
     setShowTypeInput(false);
   }
@@ -137,10 +157,10 @@ export default function App() {
       <div className="window-drag-strip" aria-hidden="true" />
       <div className="window-drag-left-zone" aria-hidden="true" />
       <section className="companion-window">
-        <header className="krilly-topbar"><div className="brand-mark">KRILLY</div><div className={`presence-dot ${isConnected ? "online" : ""}`}><span />{isConnected ? "LIVE" : "STANDBY"}</div></header>
+        <header className="krilly-topbar"><div className="brand-mark">KRILLY</div><div className={`presence-dot ${isLive ? "online" : ""}`}><span />{isLive ? (isConnected ? "AI LIVE" : "LOCAL LIVE") : "STANDBY"}</div></header>
         <section className="face-stage">
           <div className="core-wrap"><div className="core-halo" /><KrillyFace mood={mood} mouthShape={mouthShape} /></div>
-          <div className="krilly-state"><Sparkles size={14}/><strong>{isConnected ? (mood === "speaking" ? "Speaking" : mood === "thinking" ? "Thinking" : "Listening") : "Ready when you are"}</strong><span>{isConnected ? "Hands-free session active" : "Press Space to wake Krilly"}</span></div>
+          <div className="krilly-state"><Sparkles size={14}/><strong>{isConnected ? (mood === "speaking" ? "Speaking" : mood === "thinking" ? "Thinking" : "Listening") : localLive ? "Local operator ready" : "Ready when you are"}</strong><span>{isConnected ? "Hands-free session active" : "Press Space to wake Krilly"}</span></div>
         </section>
 
         <section className="glance-row">
