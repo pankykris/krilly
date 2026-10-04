@@ -94,7 +94,6 @@ export default function App() {
       active = false;
       removeWake();
       removeWakeError();
-      void window.krilly.stopWakeWord();
     };
   }, []);
 
