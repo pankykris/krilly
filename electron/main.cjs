@@ -1116,9 +1116,8 @@ ipcMain.handle("realtime:create-token", async () => {
   return { value, expiresAt: data.expires_at || data.client_secret?.expires_at || null };
 });
 
-ipcMain.handle("tools:execute", async (_event, toolCall) => {
-  const name = String(toolCall?.name || "");
-  const args = asObject(toolCall?.arguments);
+async function executeToolCall(name, rawArguments) {
+  const args = asObject(rawArguments);
 
   try {
     if (name === "morning_briefing") {
@@ -1653,6 +1652,39 @@ end tell`;
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : String(error) };
   }
+}
+
+ipcMain.handle("tools:execute", async (_event, toolCall) => {
+  return await executeToolCall(String(toolCall?.name || ""), toolCall?.arguments);
+});
+
+ipcMain.handle("local:command", async (_event, rawText) => {
+  const text = String(rawText || "").trim();
+  if (!text) return { ok: false, local: true, error: "Type a local command." };
+
+  let call = null;
+  const fieldMatch = text.match(/(?:put|enter|type|set)\s+(.+?)\s+(?:in|into|under)\s+(?:the\s+)?(.+?)(?:\s+field)?[.!]?$/i);
+  if (fieldMatch) {
+    call = { name: "computer_set_field", arguments: { value: fieldMatch[1].trim(), field: fieldMatch[2].trim().replace(/\s+field$/i, "") } };
+  }
+
+  if (!call) {
+    const openMatch = text.match(/^open\s+(?:the\s+)?(.+?)[.!]?$/i);
+    if (openMatch) call = { name: "computer_open_app", arguments: { appName: openMatch[1].trim() } };
+  }
+
+  if (!call && /computer mode/i.test(text)) call = { name: "set_mode", arguments: { mode: "computer" } };
+  if (!call && /display mode/i.test(text)) call = { name: "set_mode", arguments: { mode: "display" } };
+
+  if (!call) return { ok: false, local: true, understood: false, error: "Local Krilly does not know that command yet." };
+
+  if (call.name.startsWith("computer_") && currentMode !== "computer") {
+    currentMode = "computer";
+    setWindowMode("computer");
+  }
+
+  const result = await executeToolCall(call.name, call.arguments);
+  return { ...result, local: true, command: text };
 });
 
 async function webSearch(args) {
