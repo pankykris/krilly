@@ -1144,7 +1144,21 @@ async function executeToolCall(name, rawArguments) {
   const args = asObject(rawArguments);
 
   try {
-    if (name === "local_dom_inspect") {\n      const result = await cdpInspectForms();\n      return { ...result, artifact: { title: "Browser Form Diagnostic", kind: "code", language: "json", content: JSON.stringify(result, null, 2) }, message: result.ok ? "Browser form diagnostic captured." : result.error };\n    }\n\n    if (name === "morning_briefing") {
+    if (name === "local_dom_inspect") {
+      const result = await cdpInspectForms();
+      return {
+        ...result,
+        artifact: {
+          title: "Browser Form Diagnostic",
+          kind: "code",
+          language: "json",
+          content: JSON.stringify(result, null, 2),
+        },
+        message: result.ok ? "Browser form diagnostic captured." : result.error,
+      };
+    }
+
+    if (name === "morning_briefing") {
       const live = await morningLiveData();
       const fallback = {
         sales: "OTR sales input for Friday and Saturday was not current at the last verified check. Do not treat displayed zeroes as confirmed zero sales.",
