@@ -1,7 +1,7 @@
 import { useRef, useState } from "react";
 import { BrainCircuit, Expand, History, Keyboard, Mic, MicOff, MonitorCog, PanelRight, Send } from "lucide-react";
 import { ArtifactPanel } from "./components/ArtifactPanel";
-import { KrillyFace } from "./components/KrillyFace";
+import { KrillyFace } from "./components/RickyFace";
 import { newEntry, KrillyRealtimeClient, type MouthShape, type KrillyConnectionState, type KrillyMood, type TranscriptEntry } from "./lib/realtime";
 import type { KrillyArtifact } from "./vite-env";
 
