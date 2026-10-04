@@ -655,6 +655,18 @@ const toolSpecs = [
   },
   {
     type: "function",
+    name: "ui_accessibility_scan",
+    description: "Diagnose the focused Windows app by listing visible accessible UI controls, their names, types, and screen bounds. Use this when a requested visible control cannot be located reliably.",
+    parameters: {
+      type: "object",
+      properties: {
+        filter: { type: "string", description: "Optional label text to prioritise, for example Add Product." },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
+    type: "function",
     name: "ui_inspect",
     description: "Inspect the active app and window when supported by the operating system. Requires computer mode.",
     parameters: {
@@ -1434,6 +1446,20 @@ ipcMain.handle("tools:execute", async (_event, toolCall) => {
           content: screenshotPath,
         },
       };
+    }
+
+    if (name === "ui_accessibility_scan") {
+      if (process.platform !== "win32") return { ok: false, error: "Accessibility scan is currently Windows-only." };
+      const filter = String(args.filter || "").trim().toLowerCase();
+      const script = `Add-Type -AssemblyName UIAutomationClient; Add-Type -AssemblyName UIAutomationTypes; $root=[Windows.Automation.AutomationElement]::FocusedElement; if($null -eq $root){Write-Output 'NO_FOCUS'; exit}; $walker=[Windows.Automation.TreeWalker]::ControlViewWalker; $p=$walker.GetParent($root); while($null -ne $p -and $p.Current.ControlType -ne [Windows.Automation.ControlType]::Window){$root=$p;$p=$walker.GetParent($root)}; if($null -ne $p){$root=$p}; Write-Output ('WINDOW|'+$root.Current.Name); $all=$root.FindAll([Windows.Automation.TreeScope]::Descendants,[Windows.Automation.Condition]::TrueCondition); $count=0; foreach($e in $all){try{$n=$e.Current.Name;$r=$e.Current.BoundingRectangle;if([string]::IsNullOrWhiteSpace($n)-or$r.Width-le 1-or$r.Height-le 1){continue};$ct=$e.Current.ControlType.ProgrammaticName; Write-Output ('CONTROL|'+$n.Replace('|','/')+'|'+$ct+'|'+[math]::Round($r.Left)+','+[math]::Round($r.Top)+','+[math]::Round($r.Width)+','+[math]::Round($r.Height));$count++;if($count-ge 250){break}}catch{}}`;
+      const { stdout } = await execFileAsync("powershell.exe", ["-NoProfile", "-STA", "-NonInteractive", "-Command", script]);
+      const lines = stdout.split(/\r?\n/).filter(Boolean);
+      const windowLine = lines.find((line) => line.startsWith("WINDOW|")) || "WINDOW|Unknown";
+      const controls = lines.filter((line) => line.startsWith("CONTROL|"));
+      const prioritized = filter ? controls.filter((line) => line.toLowerCase().includes(filter)) : [];
+      const selected = prioritized.length ? prioritized.concat(controls.filter((line) => !prioritized.includes(line)).slice(0, 80)) : controls.slice(0, 100);
+      const summary = [windowLine, ...selected].join("\n");
+      return { ok: true, filter: filter || null, matchingControls: prioritized.length, totalVisibleNamedControls: controls.length, summary, artifact: { title: "Accessibility Scan", kind: "text", content: summary } };
     }
 
     if (name === "ui_inspect") {
