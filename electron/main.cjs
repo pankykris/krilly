@@ -17,6 +17,7 @@ let mainWindow = null;
 let normalWindowBounds = null;
 let dbWriteQueue = Promise.resolve();
 let wakeWordProcess = null;
+let visualClickGeneration = 0;
 
 const KRILLY_INSTRUCTIONS = `# KRILLY IDENTITY
 You are KRILLY, Sir's long-term personal executive operator and the operational intelligence beside Keralan Karavan. You are a distinct person in the room, not a generic assistant wearing a personality prompt.
@@ -1255,10 +1256,11 @@ ipcMain.handle("tools:execute", async (_event, toolCall) => {
       const apiKey = process.env.OPENAI_API_KEY;
       if (!apiKey) return { ok: false, error: "OPENAI_API_KEY is missing." };
 
+      const myGeneration = ++visualClickGeneration;
       await fs.mkdir(dataDir, { recursive: true });
       const screenshotPath = path.join(dataDir, `target-${Date.now()}.png`);
       const encodedPath = Buffer.from(screenshotPath, "utf16le").toString("base64");
-      const captureScript = `Add-Type -AssemblyName System.Windows.Forms; Add-Type -AssemblyName System.Drawing; $p=[Text.Encoding]::Unicode.GetString([Convert]::FromBase64String('${encodedPath}')); $b=[System.Windows.Forms.SystemInformation]::VirtualScreen; $bmp=New-Object Drawing.Bitmap $b.Width,$b.Height; $g=[Drawing.Graphics]::FromImage($bmp); $g.CopyFromScreen($b.Location,[Drawing.Point]::Empty,$b.Size); $bmp.Save($p,[Drawing.Imaging.ImageFormat]::Png); Write-Output ($b.X.ToString()+','+$b.Y.ToString()+','+$b.Width.ToString()+','+$b.Height.ToString()); $g.Dispose(); $bmp.Dispose()`;
+      const captureScript = `Add-Type -AssemblyName System.Windows.Forms; Add-Type -AssemblyName System.Drawing; Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public class KActiveMonitor { [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow(); [DllImport("user32.dll")] public static extern IntPtr MonitorFromWindow(IntPtr hwnd, uint flags); [DllImport("user32.dll")] public static extern bool GetMonitorInfo(IntPtr hMonitor, ref MONITORINFO info); [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left; public int Top; public int Right; public int Bottom; } [StructLayout(LayoutKind.Sequential, CharSet=CharSet.Auto)] public struct MONITORINFO { public uint cbSize; public RECT rcMonitor; public RECT rcWork; public uint dwFlags; } }'; $p=[Text.Encoding]::Unicode.GetString([Convert]::FromBase64String('${encodedPath}')); $h=[KActiveMonitor]::GetForegroundWindow(); $m=[KActiveMonitor]::MonitorFromWindow($h,2); $i=New-Object KActiveMonitor+MONITORINFO; $i.cbSize=[Runtime.InteropServices.Marshal]::SizeOf($i); [KActiveMonitor]::GetMonitorInfo($m,[ref]$i)|Out-Null; $x=$i.rcMonitor.Left; $y=$i.rcMonitor.Top; $w=$i.rcMonitor.Right-$x; $hgt=$i.rcMonitor.Bottom-$y; $bmp=New-Object Drawing.Bitmap $w,$hgt; $g=[Drawing.Graphics]::FromImage($bmp); $g.CopyFromScreen((New-Object Drawing.Point $x,$y),[Drawing.Point]::Empty,(New-Object Drawing.Size $w,$hgt)); $bmp.Save($p,[Drawing.Imaging.ImageFormat]::Png); Write-Output ($x.ToString()+','+$y.ToString()+','+$w.ToString()+','+$hgt.ToString()); $g.Dispose(); $bmp.Dispose()`;
       const { stdout: boundsOut } = await execFileAsync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", captureScript]);
       const [originX, originY, screenWidth, screenHeight] = boundsOut.trim().split(",").map(Number);
       if (![originX, originY, screenWidth, screenHeight].every(Number.isFinite)) {
@@ -1298,6 +1300,7 @@ ipcMain.handle("tools:execute", async (_event, toolCall) => {
         return { ok: false, error: "Visual locator returned a point outside the captured screen." };
       }
 
+      if (myGeneration !== visualClickGeneration) return { ok: false, cancelled: true, message: "Superseded by a newer visual click request." };
       const desktopX = Math.round(originX + x);
       const desktopY = Math.round(originY + y);
       const clickScript = `Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public class KGroundClick { [DllImport("user32.dll")] public static extern bool SetCursorPos(int X,int Y); [DllImport("user32.dll")] public static extern void mouse_event(uint f,uint dx,uint dy,uint d,uint e); }'; [KGroundClick]::SetCursorPos(${desktopX},${desktopY}) | Out-Null; Start-Sleep -Milliseconds 100; [KGroundClick]::mouse_event(2,0,0,0,0); Start-Sleep -Milliseconds 40; [KGroundClick]::mouse_event(4,0,0,0,0)`;
