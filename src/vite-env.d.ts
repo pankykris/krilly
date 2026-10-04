@@ -45,6 +45,10 @@ declare global {
       createRealtimeToken: () => Promise<{ value: string; expiresAt: number | null }>;
       executeTool: (toolCall: KrillyToolCall) => Promise<KrillyToolResult>;
       getToolSpecs: () => Promise<KrillyToolSpec[]>;
+      startWakeWord: () => Promise<{ ok: boolean; listening?: boolean; error?: string }>;
+      stopWakeWord: () => Promise<{ ok: boolean; listening?: boolean }>;
+      onWakeWord: (callback: () => void) => () => void;
+      onWakeWordError: (callback: (message: string) => void) => () => void;
     };
   }
 }
