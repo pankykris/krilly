@@ -903,6 +903,18 @@ function setWindowMode(mode) {
 
 ipcMain.handle("tools:list", () => toolSpecs);
 
+ipcMain.handle("screen:read-image", async (_event, screenshotPath) => {
+  const requestedPath = path.resolve(String(screenshotPath || ""));
+  const allowedDir = path.resolve(dataDir);
+  if (!requestedPath.startsWith(allowedDir + path.sep) || !/^screenshot-\d+\.png$/i.test(path.basename(requestedPath))) {
+    throw new Error("Screenshot path is not an approved Krilly capture.");
+  }
+  const bytes = await fs.readFile(requestedPath);
+  return `data:image/png;base64,${bytes.toString("base64")}`;
+});
+
+
+
 ipcMain.handle("realtime:create-token", async () => {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
