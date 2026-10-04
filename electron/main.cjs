@@ -5,6 +5,7 @@ const path = require("node:path");
 const fs = require("node:fs/promises");
 const crypto = require("node:crypto");
 const dotenv = require("dotenv");
+const { morningLiveData } = require("./google-bridge.cjs");
 
 dotenv.config({ path: path.join(process.cwd(), ".env.local") });
 
@@ -703,26 +704,22 @@ ipcMain.handle("tools:execute", async (_event, toolCall) => {
 
   try {
     if (name === "morning_briefing") {
+      const live = await morningLiveData();
+      const fallback = {
+        sales: "OTR sales input for Friday and Saturday was not current at the last verified check. Do not treat displayed zeroes as confirmed zero sales.",
+        labour: "The labour dashboard was connected but its displayed week was stale at the last verified check.",
+        stock: "The stock sheet is connected, but a current daily count had not been entered at the last verified check.",
+        feedback: "The latest verified October feedback contained three 5/5 food responses, all saying they would return, with strong service praise for Shiva."
+      };
       return {
         ok: true,
-        testMode: true,
+        liveData: live.connected,
         generatedAt: new Date().toISOString(),
-        briefing: {
-          today: [
-            "OTR sales input for Friday and Saturday is not current, so do not treat the displayed zeroes as confirmed zero sales.",
-            "The labour dashboard is connected but its displayed week is 21 to 27 September, so current labour performance should not be quoted until refreshed."
-          ],
-          upcoming: [
-            "Chefs Forum: 80-cover starter on 12 October.",
-            "Cardiff Marathon road-closure check is on today's calendar."
-          ],
-          customerSignal: "Three new 2 October OTR feedback responses rated food 5 out of 5, all said they would return, and all three were served by Shiva with strong service praise.",
-          dataNotes: [
-            "Stock sheet is connected, but the current daily count has not been entered.",
-            "Live HACCP status is not yet available to Krilly."
-          ]
-        },
-        speakingGuidance: "Give SIR a short natural spoken briefing. Do not read source-health labels or green/amber/red status. Lead with what needs his attention, then the nearest upcoming commitment, then one useful positive signal. Be explicit when data is missing or stale."
+        google: live,
+        fallback,
+        speakingGuidance: live.connected
+          ? "Use the live calendar and Gmail data first. Mention only genuinely important items. Then use fallback operational notes only when useful, clearly treating them as last-verified rather than live. Keep the spoken briefing short and do not mention green/amber/red status."
+          : "Google live data is not authenticated yet. Give a short briefing from the last-verified fallback and plainly say live Google data is not connected yet. Do not mention green/amber/red status."
       };
     }
 
