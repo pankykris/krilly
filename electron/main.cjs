@@ -538,8 +538,9 @@ function startWakeWordListener() {
     "$grammar = New-Object System.Speech.Recognition.Grammar($grammarBuilder)",
     "$recognizer.LoadGrammar($grammar)",
     "$recognizer.SetInputToDefaultAudioDevice()",
-    "$recognizer.add_SpeechRecognized({ param($sender,$eventArgs) if ($eventArgs.Result.Confidence -ge 0.50) { [Console]::Out.WriteLine('KRILLY_WAKE'); [Console]::Out.Flush() } })",
+    "$recognizer.add_SpeechRecognized({ param($sender,$eventArgs) [Console]::Out.WriteLine(('KRILLY_HEARD|{0}|{1:N2}' -f $eventArgs.Result.Text,$eventArgs.Result.Confidence)); [Console]::Out.Flush(); if ($eventArgs.Result.Confidence -ge 0.35) { [Console]::Out.WriteLine('KRILLY_WAKE'); [Console]::Out.Flush() } })",
     "$recognizer.RecognizeAsync([System.Speech.Recognition.RecognizeMode]::Multiple)",
+    "[Console]::Out.WriteLine('KRILLY_LISTENER_STARTED'); [Console]::Out.Flush()",
     "while ($true) { Start-Sleep -Milliseconds 500 }",
   ].join("; ");
 
@@ -555,7 +556,9 @@ function startWakeWordListener() {
     const lines = stdoutBuffer.split(/\\r?\\n/);
     stdoutBuffer = lines.pop() || "";
     for (const line of lines) {
-      if (line.trim() === "KRILLY_WAKE") {
+      const message = line.trim();
+      if (message) console.log(`[wake-word] ${message}`);
+      if (message === "KRILLY_WAKE") {
         stopWakeWordListener();
         if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("wake-word:detected");
         break;
@@ -563,11 +566,18 @@ function startWakeWordListener() {
     }
   });
 
+  child.stderr.on("data", (chunk) => {
+    const message = chunk.toString().trim();
+    if (message) console.error(`[wake-word] STDERR: ${message}`);
+  });
+
   child.on("error", (error) => {
+    console.error(`[wake-word] ERROR: ${error.message}`);
     if (wakeWordProcess === child) wakeWordProcess = null;
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("wake-word:error", error.message);
   });
-  child.on("exit", () => {
+  child.on("exit", (code, signal) => {
+    console.log(`[wake-word] EXIT code=${code} signal=${signal}`);
     if (wakeWordProcess === child) wakeWordProcess = null;
   });
   return { ok: true, listening: true };
