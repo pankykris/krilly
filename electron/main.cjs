@@ -45,6 +45,30 @@ async function ensureKrillyChrome() {
   return false;
 }
 
+async function cdpInspectForms() {
+  if (!(await ensureKrillyChrome())) return { ok:false, error:"Krilly Chrome DevTools connection is unavailable." };
+  const tabs=(await (await fetch(`http://127.0.0.1:${krillyChromePort}/json`)).json())
+    .filter(t=>t.type==="page"&&t.webSocketDebuggerUrl&&!String(t.url||"").startsWith("devtools://"));
+  const expression=`(() => ({
+    title:document.title,url:location.href,
+    controls:[...document.querySelectorAll('input,textarea,select,[contenteditable="true"]')].map((el,index)=>({
+      index,tag:el.tagName,type:el.getAttribute('type')||'',name:el.getAttribute('name')||'',id:el.id||'',
+      ariaLabel:el.getAttribute('aria-label')||'',ariaLabelledby:el.getAttribute('aria-labelledby')||'',
+      placeholder:el.getAttribute('placeholder')||'',
+      labels:el.labels?[...el.labels].map(x=>(x.innerText||x.textContent||'').replace(/\\s+/g,' ').trim()):[],
+      disabled:!!el.disabled,readOnly:!!el.readOnly
+    }))
+  }))()`;
+  async function evaluate(page){
+    const ws=new WebSocket(page.webSocketDebuggerUrl); await new Promise((r,j)=>{ws.onopen=r;ws.onerror=j});
+    return await new Promise((r,j)=>{const timer=setTimeout(()=>{try{ws.close()}catch{};j(new Error("CDP timeout"))},3000);
+      ws.onmessage=ev=>{try{const m=JSON.parse(ev.data);if(m.id===1){clearTimeout(timer);try{ws.close()}catch{};m.error?j(new Error(m.error.message)):r(m.result?.result?.value)}}catch{}};
+      ws.send(JSON.stringify({id:1,method:"Runtime.evaluate",params:{expression,returnByValue:true}}));});
+  }
+  const pages=[]; for(const page of tabs){try{const data=await evaluate(page);if(data?.controls?.length)pages.push(data)}catch{}}
+  return {ok:true,pages};
+}
+
 async function cdpSetNamedField(field, value) {
   if (!(await ensureKrillyChrome())) return { ok:false, error:"Krilly Chrome DevTools connection is unavailable." };
   const tabs = (await (await fetch(`http://127.0.0.1:${krillyChromePort}/json`)).json())
@@ -1120,7 +1144,7 @@ async function executeToolCall(name, rawArguments) {
   const args = asObject(rawArguments);
 
   try {
-    if (name === "morning_briefing") {
+    if (name === "local_dom_inspect") {\n      const result = await cdpInspectForms();\n      return { ...result, artifact: { title: "Browser Form Diagnostic", kind: "code", language: "json", content: JSON.stringify(result, null, 2) }, message: result.ok ? "Browser form diagnostic captured." : result.error };\n    }\n\n    if (name === "morning_briefing") {
       const live = await morningLiveData();
       const fallback = {
         sales: "OTR sales input for Friday and Saturday was not current at the last verified check. Do not treat displayed zeroes as confirmed zero sales.",
@@ -1662,8 +1686,7 @@ ipcMain.handle("local:command", async (_event, rawText) => {
   const text = String(rawText || "").trim();
   if (!text) return { ok: false, local: true, error: "Type a local command." };
 
-  let call = null;
-  const fieldMatch = text.match(/(?:put|enter|type|set)\s+(.+?)\s+(?:in|into|under)\s+(?:the\s+)?(.+?)(?:\s+field)?[.!]?$/i);
+  let call = null;\n  if (/^(?:inspect|diagnose|scan)\\s+(?:the\\s+)?(?:peazi\\s+)?(?:form|fields|dom)$/i.test(text)) call = { name: "local_dom_inspect", arguments: {} };\n  const fieldMatch = text.match(/(?:put|enter|type|set)\s+(.+?)\s+(?:in|into|under)\s+(?:the\s+)?(.+?)(?:\s+field)?[.!]?$/i);
   if (fieldMatch) {
     call = { name: "computer_set_field", arguments: { value: fieldMatch[1].trim(), field: fieldMatch[2].trim().replace(/\s+field$/i, "") } };
   }
