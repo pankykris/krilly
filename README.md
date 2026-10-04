@@ -1,6 +1,6 @@
-# RileyJarvis
+# Krilly
 
-RileyJarvis is a local Electron desktop AI companion with realtime voice, a visual artifact panel, image generation, web search, notes, and opt-in macOS computer control.
+Krilly is a local Electron desktop AI companion with realtime voice, a visual artifact panel, image generation, web search, notes, and opt-in Windows-first computer control.
 
 It is built with Electron, React, Vite, TypeScript, and the OpenAI Realtime API.
 
@@ -16,7 +16,7 @@ It is built with Electron, React, Vite, TypeScript, and the OpenAI Realtime API.
 
 ## Requirements
 
-- macOS
+- Windows 10/11
 - Node.js 20+
 - npm
 - An OpenAI API key with Realtime and image generation access
@@ -25,8 +25,8 @@ It is built with Electron, React, Vite, TypeScript, and the OpenAI Realtime API.
 ## Quick Start
 
 ```bash
-git clone https://github.com/rileybrown/rileyjarvis.git
-cd rileyjarvis
+git clone https://github.com/pankykris/krilly.git
+cd krilly
 npm install
 cp .env.example .env.local
 npm run dev
@@ -41,13 +41,9 @@ EXA_API_KEY=your_exa_api_key_here
 
 `OPENAI_API_KEY` is required. `EXA_API_KEY` is optional; web search will show a setup message when it is missing.
 
-## macOS Permissions
+## Windows Permissions
 
-RileyJarvis runs locally. Depending on the features you use, macOS may ask for:
-
-- Microphone permission for voice conversation.
-- Accessibility permission for computer-control tools.
-- Screen Recording permission for screenshots and screen inspection.
+Krilly runs locally. Windows may ask for microphone permission for voice conversation. Desktop-control actions run only after Krilly is switched into computer-use mode.
 
 Computer-control tools are blocked until the app is in computer-use mode.
 
