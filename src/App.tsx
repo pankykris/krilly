@@ -18,7 +18,7 @@ export default function App() {
   const [showTypeInput, setShowTypeInput] = useState(false);
   const [mouthShape, setMouthShape] = useState<MouthShape>({ open: 0, width: 0.18, round: 0, teeth: 0 });
   const [transcript, setTranscript] = useState<TranscriptEntry[]>([
-    newEntry("system", "Krilly is ready. Press Ctrl + Space to wake her, then talk naturally."),
+    newEntry("system", "Krilly is ready. Press Space to wake her, then talk naturally."),
   ]);
   const [status, setStatus] = useState("Idle");
   const [textPrompt, setTextPrompt] = useState("");
@@ -30,7 +30,11 @@ export default function App() {
   async function connect() {
     if (connectingRef.current || clientRef.current) return;
     connectingRef.current = true;
-    await window.krilly.stopWakeWord();
+    try {
+      await window.krilly.stopWakeWord();
+    } catch {
+      // Wake-word support is optional in V1. It must never block Spacebar wake.
+    }
     const client = new KrillyRealtimeClient({
       onConnectionState: setConnectionState,
       onMood: setMood,
@@ -59,8 +63,12 @@ export default function App() {
       onThumbnailReady: playThumbnailReadySound,
     });
     clientRef.current = client;
-    await client.connect();
-    connectingRef.current = false;
+    try {
+      await client.connect();
+    } finally {
+      connectingRef.current = false;
+      if (clientRef.current === client && connectionState === "error") clientRef.current = null;
+    }
   }
 
   function disconnect() {
