@@ -56,6 +56,16 @@ async function cdpInspectForms() {
       ariaLabel:el.getAttribute('aria-label')||'',ariaLabelledby:el.getAttribute('aria-labelledby')||'',
       placeholder:el.getAttribute('placeholder')||'',
       labels:el.labels?[...el.labels].map(x=>(x.innerText||x.textContent||'').replace(/\\s+/g,' ').trim()):[],
+      nearby:(() => {
+        const own=s=>String(s||'').replace(/\\s+/g,' ').trim();
+        const rows=[]; let node=el;
+        for(let depth=0;depth<4&&node?.parentElement;depth++){
+          node=node.parentElement;
+          const text=own(node.innerText||node.textContent||'');
+          if(text) rows.push({depth:depth+1,tag:node.tagName,className:String(node.className||'').slice(0,160),text:text.slice(0,300)});
+        }
+        return rows;
+      })(),
       disabled:!!el.disabled,readOnly:!!el.readOnly
     }))
   }))()`;
