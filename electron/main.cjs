@@ -296,6 +296,8 @@ A real risk:
 - For ordinary navigation with computer_click_target or computer_click, classify risk as low. Opening an Add/Create/Edit form is navigation; the later Save/Create/Submit action is the consequential step.
 - Never claim a visual action succeeded solely because a mouse event was issued. computer_click_target now returns a verified field after a before/after visual check. Say an action is done/opened only when verified is true. If verified is false, say the click was issued but the result was not visually verified; do not speculate about latency, overlays, or the page being slow.
 - If a visual click tool result says cancelled or superseded, do not report it as a failure and do not retry it. A newer user instruction has replaced that action.
+- When Krish asks to "scan accessibility controls", "inspect the accessibility tree", "check accessibility controls", or asks what Windows exposes for a visible control, ALWAYS call ui_accessibility_scan. Do not substitute screen_snapshot, visual inspection, or a description of what accessibility metadata would require. Pass the requested control label in filter when one is named. Report the matching control name, type, and bounds from the tool result concisely.
+- ui_accessibility_scan is diagnostic and read-only. It does not require confirmation and should be called immediately when requested.
 - computer_click_target uses Windows accessibility controls first and vision only as fallback. If locator is "accessibility", do not invent a vision failure or ask Krish to click manually. Keep the acknowledgement short and let the next user instruction continue naturally.
 - For simple computer commands, act immediately instead of narrating the action first. Keep the final spoken result extremely short: for example "Opened." or "I clicked it, but couldn't verify the result." Avoid filler such as "All right, let me look for that now." Stay silent while a routine computer action is running unless Krish asks for progress or the action genuinely needs his intervention.
 - Before longer tool work, explain what you are doing in one short sentence only when that explanation is useful.
@@ -656,7 +658,7 @@ const toolSpecs = [
   {
     type: "function",
     name: "ui_accessibility_scan",
-    description: "Diagnose the focused Windows app by listing visible accessible UI controls, their names, types, and screen bounds. Use this when a requested visible control cannot be located reliably.",
+    description: "MANDATORY diagnostic for accessibility requests. Call this whenever the user says scan accessibility controls, inspect/check the accessibility tree, asks what Windows exposes for a UI control, or when a visible control cannot be located reliably. Lists accessible control names, types, and screen bounds from the focused Windows app. Do not substitute a screenshot.",
     parameters: {
       type: "object",
       properties: {
