@@ -1150,8 +1150,8 @@ ipcMain.handle("tools:execute", async (_event, toolCall) => {
       const text = String(args.text || "");
       if (process.platform === "win32") {
         const encoded = Buffer.from(text, "utf16le").toString("base64");
-        const script = `Add-Type -AssemblyName System.Windows.Forms; $t=[Text.Encoding]::Unicode.GetString([Convert]::FromBase64String($args[0])); [System.Windows.Forms.SendKeys]::SendWait(($t -replace '([+^%~(){}\\[\\]])','{$1}'))`;
-        await execFileAsync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script, encoded]);
+        const script = `Add-Type -AssemblyName System.Windows.Forms; $t=[Text.Encoding]::Unicode.GetString([Convert]::FromBase64String('${encoded}')); [System.Windows.Forms.Clipboard]::SetText($t); [System.Windows.Forms.SendKeys]::SendWait('^v')`;
+        await execFileAsync("powershell.exe", ["-NoProfile", "-STA", "-NonInteractive", "-Command", script]);
       } else if (process.platform === "darwin") {
         await execFileAsync("osascript", ["-e", `tell application "System Events" to keystroke ${appleScriptString(text)}`]);
       } else {
