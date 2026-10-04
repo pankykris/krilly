@@ -588,6 +588,21 @@ const toolSpecs = [
   },
   {
     type: "function",
+    name: "computer_click_target",
+    description: "Visually locate a named target on the current Windows screen and click it. Use this instead of guessing coordinates when SIR names a visible button, tile, link, field, tab, or control. Requires computer mode.",
+    parameters: {
+      type: "object",
+      properties: {
+        target: { type: "string" },
+        confirmed: { type: "boolean" },
+        risk: { type: "string", enum: ["low", "may_send_or_modify", "private_or_sensitive"] },
+      },
+      required: ["target"],
+      additionalProperties: false,
+    },
+  },
+  {
+    type: "function",
     name: "computer_click",
     description: "Click screen coordinates. Requires computer mode. Ask for confirmation before clicking buttons that send, delete, buy, submit, or change settings.",
     parameters: {
