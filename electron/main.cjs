@@ -1236,6 +1236,67 @@ ipcMain.handle("tools:execute", async (_event, toolCall) => {
       return { ok: true, message: `Moved mouse to ${x}, ${y}.` };
     }
 
+    if (name === "computer_click_target") {
+      if (requiresConfirmation(args)) {
+        return { ok: false, requiresConfirmation: true, message: "Confirmation required before clicking a risky target." };
+      }
+      if (process.platform !== "win32") return { ok: false, error: "Visual target clicking is currently Windows-only." };
+      const target = String(args.target || "").trim();
+      if (!target) return { ok: false, error: "A visible target name is required." };
+      const apiKey = process.env.OPENAI_API_KEY;
+      if (!apiKey) return { ok: false, error: "OPENAI_API_KEY is missing." };
+
+      await fs.mkdir(dataDir, { recursive: true });
+      const screenshotPath = path.join(dataDir, `target-${Date.now()}.png`);
+      const encodedPath = Buffer.from(screenshotPath, "utf16le").toString("base64");
+      const captureScript = `Add-Type -AssemblyName System.Windows.Forms; Add-Type -AssemblyName System.Drawing; $p=[Text.Encoding]::Unicode.GetString([Convert]::FromBase64String('${encodedPath}')); $b=[System.Windows.Forms.SystemInformation]::VirtualScreen; $bmp=New-Object Drawing.Bitmap $b.Width,$b.Height; $g=[Drawing.Graphics]::FromImage($bmp); $g.CopyFromScreen($b.Location,[Drawing.Point]::Empty,$b.Size); $bmp.Save($p,[Drawing.Imaging.ImageFormat]::Png); Write-Output ($b.X.ToString()+','+$b.Y.ToString()+','+$b.Width.ToString()+','+$b.Height.ToString()); $g.Dispose(); $bmp.Dispose()`;
+      const { stdout: boundsOut } = await execFileAsync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", captureScript]);
+      const [originX, originY, screenWidth, screenHeight] = boundsOut.trim().split(",").map(Number);
+      if (![originX, originY, screenWidth, screenHeight].every(Number.isFinite)) {
+        return { ok: false, error: "Could not determine the captured screen bounds." };
+      }
+
+      const bytes = await fs.readFile(screenshotPath);
+      const imageUrl = `data:image/png;base64,${bytes.toString("base64")}`;
+      const locateResponse = await fetch("https://api.openai.com/v1/responses", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: "gpt-6-luna",
+          input: [{
+            role: "user",
+            content: [
+              { type: "input_text", text: `Locate the visible UI target named "${target}" in this desktop screenshot. Return ONLY compact JSON with keys found, x, y, confidence, description. x and y must be integer pixel coordinates in the ORIGINAL screenshot whose size is ${screenWidth}x${screenHeight}, measured from its top-left. Use the centre of the clickable target. If uncertain or absent, set found false and x/y null. Never guess.` },
+              { type: "input_image", image_url: imageUrl, detail: "high" }
+            ]
+          }],
+          text: { format: { type: "json_object" } }
+        })
+      });
+      if (!locateResponse.ok) {
+        return { ok: false, error: `Visual locator failed: HTTP ${locateResponse.status} ${await locateResponse.text()}` };
+      }
+      const locateData = await locateResponse.json();
+      const outputText = locateData.output_text || locateData.output?.flatMap((item) => item.content || []).find((part) => part.type === "output_text")?.text || "";
+      let located;
+      try { located = JSON.parse(outputText); } catch { return { ok: false, error: "Visual locator returned invalid coordinates." }; }
+      const x = Number(located.x);
+      const y = Number(located.y);
+      const confidence = Number(located.confidence || 0);
+      if (located.found !== true || !Number.isFinite(x) || !Number.isFinite(y) || confidence < 0.55) {
+        return { ok: false, found: false, confidence, message: `I could not locate "${target}" confidently enough to click it.`, description: located.description || "" };
+      }
+      if (x < 0 || y < 0 || x >= screenWidth || y >= screenHeight) {
+        return { ok: false, error: "Visual locator returned a point outside the captured screen." };
+      }
+
+      const desktopX = Math.round(originX + x);
+      const desktopY = Math.round(originY + y);
+      const clickScript = `Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public class KGroundClick { [DllImport("user32.dll")] public static extern bool SetCursorPos(int X,int Y); [DllImport("user32.dll")] public static extern void mouse_event(uint f,uint dx,uint dy,uint d,uint e); }'; [KGroundClick]::SetCursorPos(${desktopX},${desktopY}) | Out-Null; Start-Sleep -Milliseconds 100; [KGroundClick]::mouse_event(2,0,0,0,0); Start-Sleep -Milliseconds 40; [KGroundClick]::mouse_event(4,0,0,0,0)`;
+      await execFileAsync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", clickScript]);
+      return { ok: true, target, x: desktopX, y: desktopY, confidence, description: located.description || "", message: `Visually located and clicked "${target}".` };
+    }
+
     if (name === "computer_click") {
       if (requiresConfirmation(args)) {
         return { ok: false, requiresConfirmation: true, message: "Confirmation required before clicking a risky target." };
