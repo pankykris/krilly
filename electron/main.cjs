@@ -1214,8 +1214,13 @@ ipcMain.handle("tools:execute", async (_event, toolCall) => {
         return { ok: false, requiresConfirmation: true, message: "Confirmation required before clicking a risky target." };
       }
       if (process.platform === "win32") {
-        const script = 'Add-Type -TypeDefinition "using System; using System.Runtime.InteropServices; public class K { [DllImport(\\\"user32.dll\\\")] public static extern bool SetCursorPos(int X,int Y); [DllImport(\\\"user32.dll\\\")] public static extern void mouse_event(uint f,uint dx,uint dy,uint d,uint e); }"; [K]::SetCursorPos([int]$args[0],[int]$args[1]) | Out-Null; [K]::mouse_event(2,0,0,0,0); [K]::mouse_event(4,0,0,0,0)';
-        await execFileAsync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script, String(Number(args.x)), String(Number(args.y))]);
+        const x = Math.round(Number(args.x));
+        const y = Math.round(Number(args.y));
+        if (!Number.isFinite(x) || !Number.isFinite(y)) {
+          return { ok: false, error: "Valid x and y coordinates are required." };
+        }
+        const script = `Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public class KClick { [DllImport("user32.dll")] public static extern bool SetCursorPos(int X,int Y); [DllImport("user32.dll")] public static extern void mouse_event(uint f,uint dx,uint dy,uint d,uint e); }'; [KClick]::SetCursorPos(${x},${y}) | Out-Null; Start-Sleep -Milliseconds 60; [KClick]::mouse_event(2,0,0,0,0); Start-Sleep -Milliseconds 30; [KClick]::mouse_event(4,0,0,0,0)`;
+        await execFileAsync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script]);
       } else if (process.platform === "darwin") {
         await execFileAsync("osascript", ["-e", `tell application "System Events" to click at {${Number(args.x)}, ${Number(args.y)}}`]);
       } else return { ok: false, error: "Clicking is not implemented for this operating system yet." };
