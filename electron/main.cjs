@@ -1678,12 +1678,13 @@ ipcMain.handle("local:command", async (_event, rawText) => {
 
   if (!call) return { ok: false, local: true, understood: false, error: "Local Krilly does not know that command yet." };
 
-  if (call.name.startsWith("computer_") && currentMode !== "computer") {
-    currentMode = "computer";
-    setWindowMode("computer");
-  }
-
+  // Local commands may use computer tools without collapsing the Krilly UI or
+  // stealing foreground focus from the target application. Temporarily grant
+  // computer permission while preserving the user's display mode.
+  const previousMode = currentMode;
+  if (call.name.startsWith("computer_") && currentMode !== "computer") currentMode = "computer";
   const result = await executeToolCall(call.name, call.arguments);
+  if (call.name.startsWith("computer_") && previousMode !== "computer") currentMode = previousMode;
   return { ...result, local: true, command: text };
 });
 
