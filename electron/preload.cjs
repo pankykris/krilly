@@ -4,6 +4,7 @@ contextBridge.exposeInMainWorld("krilly", {
   createRealtimeToken: () => ipcRenderer.invoke("realtime:create-token"),
   executeTool: (toolCall) => ipcRenderer.invoke("tools:execute", toolCall),
   getToolSpecs: () => ipcRenderer.invoke("tools:list"),
+  readScreenImage: (screenshotPath) => ipcRenderer.invoke("screen:read-image", screenshotPath),
   startWakeWord: () => ipcRenderer.invoke("wake-word:start"),
   stopWakeWord: () => ipcRenderer.invoke("wake-word:stop"),
   onWakeWord: (callback) => {
