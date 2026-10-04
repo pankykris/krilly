@@ -574,6 +574,20 @@ const toolSpecs = [
   },
   {
     type: "function",
+    name: "computer_move_mouse",
+    description: "Move the mouse pointer to screen coordinates without clicking. Requires computer mode.",
+    parameters: {
+      type: "object",
+      properties: {
+        x: { type: "number" },
+        y: { type: "number" },
+      },
+      required: ["x", "y"],
+      additionalProperties: false,
+    },
+  },
+  {
+    type: "function",
     name: "computer_click",
     description: "Click screen coordinates. Requires computer mode. Ask for confirmation before clicking buttons that send, delete, buy, submit, or change settings.",
     parameters: {
@@ -1176,6 +1190,23 @@ ipcMain.handle("tools:execute", async (_event, toolCall) => {
         await execFileAsync("osascript", ["-e", `tell application "System Events" to repeat ${repeat} times\nkey code ${keyCode}\nend repeat`]);
       } else return { ok: false, error: "Key presses are not implemented for this operating system yet." };
       return { ok: true, message: `Pressed ${args.key}.` };
+    }
+
+    if (name === "computer_move_mouse") {
+      const x = Math.round(Number(args.x));
+      const y = Math.round(Number(args.y));
+      if (!Number.isFinite(x) || !Number.isFinite(y)) {
+        return { ok: false, error: "Valid x and y coordinates are required." };
+      }
+      if (process.platform === "win32") {
+        const script = `Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public class KMove { [DllImport("user32.dll")] public static extern bool SetCursorPos(int X,int Y); }'; [KMove]::SetCursorPos(${x},${y}) | Out-Null`;
+        await execFileAsync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script]);
+      } else if (process.platform === "darwin") {
+        return { ok: false, error: "Mouse movement is not implemented for macOS yet." };
+      } else {
+        return { ok: false, error: "Mouse movement is not implemented for this operating system yet." };
+      }
+      return { ok: true, message: `Moved mouse to ${x}, ${y}.` };
     }
 
     if (name === "computer_click") {
