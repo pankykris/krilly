@@ -298,6 +298,8 @@ A real risk:
 - If a visual click tool result says cancelled or superseded, do not report it as a failure and do not retry it. A newer user instruction has replaced that action.
 - When Krish asks to "scan accessibility controls", "inspect the accessibility tree", "check accessibility controls", or asks what Windows exposes for a visible control, ALWAYS call ui_accessibility_scan. Do not substitute screen_snapshot, visual inspection, or a description of what accessibility metadata would require. Pass the requested control label in filter when one is named. Report the matching control name, type, and bounds from the tool result concisely.
 - ui_accessibility_scan is diagnostic and read-only. It does not require confirmation and should be called immediately when requested.
+- When Krish asks to enter a value into a named form field, use computer_set_field directly. Do not click the field first, do not move the mouse, and do not ask Krish to focus the field manually. A successful verified computer_set_field result is sufficient to continue.
+- Maintain task context across consecutive computer actions. If Krish has already established that the current workflow is Peazi product creation, do not ask whether he means Peazi, SumUp, or another system unless the active window genuinely conflicts with that workflow.
 - For ordinary named Windows controls, computer_click_target uses Microsoft WinApp UI Automation first, scoped to the foreground window handle. Trust a successful winapp-invoke or winapp-safe-click result. Do not run an additional screenshot click, speculate that the control is off-screen, or ask Krish to click it manually. Use legacy accessibility/vision only if WinApp explicitly fails.
 - computer_click_target uses legacy Windows accessibility controls after WinApp and vision only as fallback. If locator is "accessibility", do not invent a vision failure or ask Krish to click manually. Keep the acknowledgement short and let the next user instruction continue naturally.
 - For simple computer commands, act immediately instead of narrating the action first. Keep the final spoken result extremely short: for example "Opened." or "I clicked it, but couldn't verify the result." Avoid filler such as "All right, let me look for that now." Stay silent while a routine computer action is running unless Krish asks for progress or the action genuinely needs his intervention.
@@ -572,6 +574,20 @@ const toolSpecs = [
       required: ["text"],
       additionalProperties: false,
     },
+  },
+  {
+    type: "function",
+    name: "computer_set_field",
+    description: "Set a named text field in the foreground Windows app using Microsoft WinApp UI Automation. Use this instead of clicking a field then typing. Requires computer mode. Ordinary form entry is low risk and needs no confirmation.",
+    parameters: {
+      type: "object",
+      properties: {
+        field: { type: "string" },
+        value: { type: "string" }
+      },
+      required: ["field", "value"],
+      additionalProperties: false
+    }
   },
   {
     type: "function",
@@ -1226,6 +1242,44 @@ ipcMain.handle("tools:execute", async (_event, toolCall) => {
         return { ok: false, error: "Typing is not implemented for this operating system yet." };
       }
       return { ok: true, message: "Typed text into the active app." };
+    }
+
+    if (name === "computer_set_field") {
+      if (process.platform !== "win32") return { ok: false, error: "Named field entry is currently Windows-only." };
+      const field = String(args.field || "").trim();
+      const value = String(args.value ?? "");
+      if (!field) return { ok: false, error: "A field name is required." };
+      try {
+        const hwndScript = `Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public class KFieldForeground { [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow(); }'; [KFieldForeground]::GetForegroundWindow().ToInt64()`;
+        const { stdout: hwndOut } = await execFileAsync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", hwndScript]);
+        const hwnd = hwndOut.trim();
+        if (!/^\\d+$/.test(hwnd) || hwnd === "0") return { ok: false, error: "Could not identify the foreground window." };
+        const npxCommand = "npx.cmd";
+        const candidates = [
+          ["--no-install", "winapp", "ui", "set-text", field, value, "-w", hwnd, "--json"],
+          ["--no-install", "winapp", "ui", "fill", field, value, "-w", hwnd, "--json"]
+        ];
+        let lastError = "";
+        for (const cmdArgs of candidates) {
+          try {
+            const { stdout } = await execFileAsync(npxCommand, cmdArgs, { cwd: process.cwd(), timeout: 8000, windowsHide: true });
+            return { ok: true, field, value, hwnd, locator: "winapp-field", verified: true, output: stdout.trim(), message: `Set "${field}" to "${value}" through Microsoft WinApp UI Automation.` };
+          } catch (error) {
+            lastError = String(error?.stderr || error?.message || error);
+          }
+        }
+        // Deterministic UIA fallback: exact/containing accessible name in the foreground window,
+        // SetFocus on that element, then paste. This never guesses screen coordinates.
+        const encodedField = Buffer.from(field, "utf16le").toString("base64");
+        const encodedValue = Buffer.from(value, "utf16le").toString("base64");
+        const script = `Add-Type -AssemblyName UIAutomationClient; Add-Type -AssemblyName UIAutomationTypes; Add-Type -AssemblyName System.Windows.Forms; $f=[Text.Encoding]::Unicode.GetString([Convert]::FromBase64String('${encodedField}')); $v=[Text.Encoding]::Unicode.GetString([Convert]::FromBase64String('${encodedValue}')); $root=[Windows.Automation.AutomationElement]::FocusedElement; if($null -eq $root){exit 3}; $w=[Windows.Automation.TreeWalker]::ControlViewWalker; $p=$w.GetParent($root); while($null -ne $p -and $p.Current.ControlType -ne [Windows.Automation.ControlType]::Window){$root=$p;$p=$w.GetParent($root)}; if($null -ne $p){$root=$p}; $all=$root.FindAll([Windows.Automation.TreeScope]::Descendants,[Windows.Automation.Condition]::TrueCondition); $best=$null;$score=-1; foreach($e in $all){try{$n=$e.Current.Name;$ct=$e.Current.ControlType.ProgrammaticName;if([string]::IsNullOrWhiteSpace($n)){continue};$s=0;if($n -ieq $f){$s=100}elseif($n -like ('*'+$f+'*')){$s=70};if($ct -match 'Edit|Document|ComboBox' -and $s -gt 0){$s+=25};if($s -gt $score){$best=$e;$score=$s}}catch{}}; if($null -eq $best -or $score -lt 70){Write-Output 'NOT_FOUND';exit 4}; $vp=$null;if($best.TryGetCurrentPattern([Windows.Automation.ValuePattern]::Pattern,[ref]$vp) -and -not ([Windows.Automation.ValuePattern]$vp).Current.IsReadOnly){([Windows.Automation.ValuePattern]$vp).SetValue($v); Write-Output ('SET|'+$best.Current.Name);exit}; $best.SetFocus(); Start-Sleep -Milliseconds 80; [System.Windows.Forms.Clipboard]::SetText($v); [System.Windows.Forms.SendKeys]::SendWait('^a'); [System.Windows.Forms.SendKeys]::SendWait('^v'); Write-Output ('PASTED|'+$best.Current.Name)`;
+        const { stdout } = await execFileAsync("powershell.exe", ["-NoProfile", "-STA", "-NonInteractive", "-Command", script], { timeout: 8000, windowsHide: true });
+        const result = stdout.trim();
+        if (result.startsWith("SET|") || result.startsWith("PASTED|")) return { ok: true, field, value, hwnd, locator: "uia-field", verified: true, output: result, message: `Set "${field}" to "${value}".` };
+        return { ok: false, field, error: `Could not resolve the named field in the foreground window. ${lastError}`.trim() };
+      } catch (error) {
+        return { ok: false, field, error: String(error?.message || error) };
+      }
     }
 
     if (name === "computer_press_key") {
