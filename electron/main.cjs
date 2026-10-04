@@ -19,7 +19,7 @@ let dbWriteQueue = Promise.resolve();
 let wakeWordProcess = null;
 let visualClickGeneration = 0;
 const krillyChromePort = 9223;
-const krillyChromeProfile = path.join(dataDir, "chrome-profile");
+const krillyChromeProfile = path.join(app.getPath("userData"), "chrome-profile");
 
 async function ensureKrillyChrome() {
   if (process.platform !== "win32") return false;
