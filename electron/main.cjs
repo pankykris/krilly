@@ -29,6 +29,7 @@ Concise, calm, useful. Speak with a confident, natural feminine voice. Talk like
 
 # Tool Behavior
 - Use read-only tools when the user's intent is clear.
+- When SIR asks for a morning briefing, daily briefing, what needs attention today, or how the business is looking, call morning_briefing. During the current integration test, keep the spoken answer concise and do not mention green/amber/red status unless SIR asks for it.
 - When Krish says "show me the menu", "show me what I can do", or asks what Krilly can do, call show_menu immediately.
 - For web search, notes, charts, records, image generation, and artifact display, act directly when the request is clear.
 - For thumbnail creation/editing, always use the thumbnail board tools, never generic image_generate and never artifact_show with imageLoading. Generate exactly one 16:9 image per request. Never generate multiple unless Krish separately asks again. Every generate/edit request gets a permanent database number that never changes, like #18 then #19 then #20. Do not renumber visible grid positions. Show paginated 3x3 pages of the permanent numbers. Do not show a standalone fullscreen loading animation for thumbnails. Use Krish's wording literally: do not invent elaborate extra concepts, fake text, or extra thumbnail ideas. For edits, use the exact existing numbered/selected image as input and make only the requested change.
@@ -49,6 +50,16 @@ Let SIR interrupt while you are speaking. If audio is unclear, ask one short cla
 When SIR asks you to spell a word, name, acronym, code, or phrase, spell it accurately letter by letter. Say each character distinctly and at a measured pace. For ambiguous letters, clarify them when useful.`;
 
 const toolSpecs = [
+  {
+    type: "function",
+    name: "morning_briefing",
+    description: "Get Krilly's Keralan Karavan morning operations briefing. Call this whenever SIR asks for a morning briefing, daily briefing, what needs attention today, or how the business is looking.",
+    parameters: {
+      type: "object",
+      properties: {},
+      additionalProperties: false,
+    },
+  },
   {
     type: "function",
     name: "set_mode",
@@ -691,6 +702,30 @@ ipcMain.handle("tools:execute", async (_event, toolCall) => {
   const args = asObject(toolCall?.arguments);
 
   try {
+    if (name === "morning_briefing") {
+      return {
+        ok: true,
+        testMode: true,
+        generatedAt: new Date().toISOString(),
+        briefing: {
+          today: [
+            "OTR sales input for Friday and Saturday is not current, so do not treat the displayed zeroes as confirmed zero sales.",
+            "The labour dashboard is connected but its displayed week is 21 to 27 September, so current labour performance should not be quoted until refreshed."
+          ],
+          upcoming: [
+            "Chefs Forum: 80-cover starter on 12 October.",
+            "Cardiff Marathon road-closure check is on today's calendar."
+          ],
+          customerSignal: "Three new 2 October OTR feedback responses rated food 5 out of 5, all said they would return, and all three were served by Shiva with strong service praise.",
+          dataNotes: [
+            "Stock sheet is connected, but the current daily count has not been entered.",
+            "Live HACCP status is not yet available to Krilly."
+          ]
+        },
+        speakingGuidance: "Give SIR a short natural spoken briefing. Do not read source-health labels or green/amber/red status. Lead with what needs his attention, then the nearest upcoming commitment, then one useful positive signal. Be explicit when data is missing or stale."
+      };
+    }
+
     if (name === "set_mode") {
       currentMode = args.mode === "computer" ? "computer" : "display";
       setWindowMode(currentMode);
