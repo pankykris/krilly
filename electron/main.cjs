@@ -638,33 +638,6 @@ const toolSpecs = [
   },
 ];
 
-async function describeCapturedImage(imagePath) {
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) return "Image analysis unavailable because the OpenAI API key is missing.";
-  const bytes = await fs.readFile(imagePath);
-  if (bytes.length > 8 * 1024 * 1024) return "Image analysis unavailable because the capture is larger than 8 MB.";
-  const dataUrl = `data:image/png;base64,${bytes.toString("base64")}`;
-  const response = await fetch("https://api.openai.com/v1/chat/completions", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      model: "gpt-5.2",
-      reasoning_effort: "none",
-      verbosity: "low",
-      messages: [
-        { role: "developer", content: "Describe only visible content in this user-requested desktop capture. Identify applications, headings, readable text, controls and useful positions. Do not guess unreadable details." },
-        { role: "user", content: [
-          { type: "text", text: "Describe what is visibly present in this desktop capture." },
-          { type: "image_url", image_url: { url: dataUrl, detail: "high" } }
-        ] }
-      ]
-    })
-  });
-  if (!response.ok) return `Image analysis failed with HTTP ${response.status}.`;
-  const data = await response.json();
-  return String(data?.choices?.[0]?.message?.content || "No visual description was returned.").trim();
-}
-
 async function ensureData() {
   await fs.mkdir(dataDir, { recursive: true });
   try {
